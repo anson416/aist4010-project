@@ -96,3 +96,31 @@ class ChannelAttention(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return x * self.attention(x)
+
+
+class AttentionGate(nn.Module):
+    """
+    Reference: [Attention U-Net: Learning Where to Look for the Pancreas](https://arxiv.org/abs/1804.03999)
+
+    Source: https://github.com/LeeJunHyun/Image_Segmentation/blob/master/network.py
+    """
+
+    def __init__(
+        self,
+        channels: int,
+    ) -> None:
+        super().__init__()
+        self.channels = channels
+
+        self.attention = nn.Sequential(
+            nn.GELU(),
+            ChannelModification(channels, 1),
+            LayerNorm2d(1, eps=1e-6),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: Tensor, g: Tensor) -> Tensor:
+        assert x.shape[1] == self.channels
+        assert g.shape[1] == self.channels
+
+        return x * self.attention(x + g)
