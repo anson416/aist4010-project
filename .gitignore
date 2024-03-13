@@ -3,6 +3,8 @@ data/
 *.jpg
 *.png
 *.pt
+*.tar
+*.zip
 *test*.py
 
 # Byte-compiled / optimized / DLL files
