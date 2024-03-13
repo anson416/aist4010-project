@@ -19,11 +19,11 @@ class LRLambda(object):
     ) -> None:
         assert epochs > 0
         assert max_lr > 0
-        assert min_lr >= 0
-        assert max_lr > min_lr
+        assert min_lr > 0
+        assert max_lr >= min_lr
         assert warmup_epochs >= 0
         assert early_min_epochs >= 0
-        assert warmup_epochs + early_min_epochs <= epochs
+        assert warmup_epochs + early_min_epochs < epochs
 
         self.__lr_lambda = lr_lambda
         self.__max_lr = max_lr
@@ -31,12 +31,12 @@ class LRLambda(object):
         self.__warmup_epochs = warmup_epochs
         self.__last_epoch = epochs - early_min_epochs - 1
         self.__lambda_epochs = epochs - 1 - warmup_epochs - early_min_epochs
-        self.__warmup_slope = (max_lr - min_lr) / warmup_epochs
+        self.__warmup_slope = 0 if warmup_epochs == 0 else (max_lr - min_lr) / warmup_epochs
 
     def __call__(self, epoch: int) -> float:
         assert epoch >= 0
 
-        if self.__warmup_epochs <= epoch <= self.__last_epoch:
+        if self.__warmup_epochs <= epoch < self.__last_epoch:
             lr = self.__lr_lambda(
                 epoch - self.__warmup_epochs,
                 self.__lambda_epochs,
@@ -53,8 +53,7 @@ class LRLambda(object):
     @classmethod
     def cosine_decay(cls, *args: Any, **kwargs: Any) -> "LRLambda":
         return cls(
-            lambda epoch, epochs, max_lr, min_lr: ((max_lr - min_lr) / 2)
-            * (np.cos((epoch / epochs) * np.pi) + 1)
+            lambda epoch, epochs, max_lr, min_lr: ((max_lr - min_lr) / 2) * (np.cos((epoch / epochs) * np.pi) + 1)
             + min_lr,
             *args,
             **kwargs,
