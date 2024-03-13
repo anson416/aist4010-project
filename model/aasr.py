@@ -230,7 +230,7 @@ class AASR(nn.Module):
                     decoded.append(out)
                     encoded.pop()
 
-        return self.output(self.concat(bilinear(x), out)), self.auxiliary(out)
+        return self.output(self.concat(bilinear(x), bilinear(out))), self.auxiliary(out)
 
     def initialize_weights(self) -> None:
         for m in self.modules():
