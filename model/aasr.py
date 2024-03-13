@@ -198,13 +198,16 @@ class AASR(nn.Module):
     def forward(
         self,
         x: Tensor,
-        scale_factor: float | tuple[float, float] = 1.0,
+        scale_factor: float | tuple[float] | tuple[float, float] = 1.0,
     ) -> tuple[Tensor, Tensor]:
+        if isinstance(scale_factor, float):
+            scale_factor = (scale_factor,)
+
+        assert all(map(lambda x: x >= 1.0, scale_factor))
         assert len(x.shape) == 4
         assert x.shape[1] == self.in_channels
         assert x.shape[2] % (1 << (len(self.levels) - 1)) == 0
         assert x.shape[3] % (1 << (len(self.levels) - 1)) == 0
-        assert scale_factor >= 1.0
 
         # Instantiate a bilinear upsampler for later use
         bilinear = nn.Upsample(scale_factor=scale_factor, mode="bilinear")
