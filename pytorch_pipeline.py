@@ -9,6 +9,7 @@ from typing import Optional, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from numpy import floating
 from torch import nn
 from torch.optim.lr_scheduler import LRScheduler, ReduceLROnPlateau
 from torch.optim.optimizer import Optimizer
@@ -25,61 +26,56 @@ class PyTorchPipeline(object):
         scheduler: Optional[Union[LRScheduler, ReduceLROnPlateau]] = None,
         device: torch.device = torch.device("cpu"),
     ) -> None:
-        self.__model = model
-        self.__criterion = criterion
-        self.__optimizer = optimizer
-        self.__scheduler = scheduler
-        self.__device = device
-        self.__output_dir: Optional[Path] = None
-        self.__best_loss: Optional[float] = None
-        self.__train_losses: list[float] = []
-        self.__val_losses: list[float] = []
-        self.__learning_rates: list[float] = []
+        self._model = model
+        self._criterion = criterion
+        self._optimizer = optimizer
+        self._scheduler = scheduler
+        self._device = device
+        self._output_dir: Optional[Path] = None
+        self._best_loss: Optional[float] = None
+        self._train_losses: list[float] = []
+        self._val_losses: list[float] = []
+        self._learning_rates: list[float] = []
 
-    def train(
+    def start(
         self,
         epochs: int,
         train_dataloader: DataLoader,
         val_dataloader: Optional[DataLoader] = None,
-    ) -> None:
-        if val_dataloader is None and self.__scheduler is not None:
-            assert not isinstance(self.__scheduler, ReduceLROnPlateau)
+        save_full: bool = False,
+    ) -> str:
+        if val_dataloader is None and self._scheduler is not None:
+            assert not isinstance(self._scheduler, ReduceLROnPlateau)
 
-        if self.__output_dir is None:
-            self.__output_dir = Path("train") / self.get_datetime()
-        self.__output_dir.mkdir(parents=True, exist_ok=True)
+        if self._output_dir is None:
+            self._output_dir = Path("train") / self.get_datetime()
+        self._output_dir.mkdir(parents=True, exist_ok=True)
 
         start_time = time.time()
         for epoch in range(1, epochs + 1):
             print(f"Epoch {epoch}/{epochs}:", flush=True)
 
             # Retrieve learning rate for current epoch
-            lr = self.__optimizer.param_groups[0]["lr"]
-            self.__learning_rates.append(lr)
+            lr = self._optimizer.param_groups[0]["lr"]
+            self._learning_rates.append(lr)
 
             # Compute losses for training and validation sets
-            train_loss = self.__train(train_dataloader)
-            self.__train_losses.append(train_loss)
+            train_loss = self.train(train_dataloader)
+            self._train_losses.append(train_loss)
             val_loss: Optional[float] = None
             if val_dataloader is not None:
-                val_loss = self.__validate(val_dataloader)
-                self.__val_losses.append(val_loss)
+                val_loss = self.validate(val_dataloader)
+                self._val_losses.append(val_loss)
 
             # Update learning rate
-            if self.__scheduler is not None:
-                self.__scheduler.step(
-                    val_loss
-                    if isinstance(self.__scheduler, ReduceLROnPlateau)
-                    else None
-                )
+            if self._scheduler is not None:
+                self._scheduler.step(val_loss if isinstance(self._scheduler, ReduceLROnPlateau) else None)
 
             # Save current and best-performing (lowest loss) models
-            self.save_model("checkpoint_last")
-            if val_loss is not None and (
-                self.__best_loss is None or val_loss < self.__best_loss
-            ):
-                self.__best_loss = val_loss
-                self.save_model("checkpoint_best")
+            self.save_checkpoint("checkpoint_last", save_full=save_full)
+            if val_loss is not None and (self._best_loss is None or val_loss < self._best_loss):
+                self._best_loss = val_loss
+                self.save_checkpoint("checkpoint_best", save_full=save_full)
 
             # Plot training curves (losses and learning rates)
             self.plot()
@@ -94,79 +90,83 @@ class PyTorchPipeline(object):
                 flush=True,
             )
 
-    def __train(self, dataloader: DataLoader) -> float:
-        self.__model.train()
+        return str(self._output_dir)
+
+    def train(self, dataloader: DataLoader) -> floating:
+        self._model.train()
 
         losses = []
         for X, y in tqdm(dataloader, desc="Training"):
             # Load a batch of data
-            X, y = X.to(self.__device), y.to(self.__device)
+            X, y = X.to(self._device), y.to(self._device)
 
             # Feedforward
-            pred = self.__model(X)
+            pred = self._model(X)
 
             # Loss
-            loss = self.__criterion(pred, y)
+            loss = self._criterion(pred, y)
             losses.append(loss.item())
 
             # Backpropagation
-            self.__optimizer.zero_grad()
+            self._optimizer.zero_grad()
             loss.backward()
-            self.__optimizer.step()
+            self._optimizer.step()
 
         return np.mean(losses)
 
     @torch.no_grad()
-    def __validate(self, dataloader: DataLoader) -> float:
-        self.__model.eval()
+    def validate(self, dataloader: DataLoader) -> floating:
+        self._model.eval()
 
         losses = []
         for X, y in tqdm(dataloader, desc="Validating"):
             # Load a batch of data
-            X, y = X.to(self.__device), y.to(self.__device)
+            X, y = X.to(self._device), y.to(self._device)
 
             # Feedforward
-            pred = self.__model(X)
+            pred = self._model(X)
 
             # Loss
-            loss = self.__criterion(pred, y)
+            loss = self._criterion(pred, y)
             losses.append(loss.item())
 
         return np.mean(losses)
 
-    def save_model(self, name: str = "checkpoint") -> None:
-        torch.save(
-            {
-                "model_state_dict": self.__model.state_dict(),
-                "optimizer_state_dict": self.__optimizer.state_dict(),
-                "train_losses": self.__train_losses,
-                "val_losses": self.__val_losses,
-                "learning_rates": self.__learning_rates,
-            },
-            self.__output_dir / f"{name}.pt",
-        )
+    def save_checkpoint(
+        self,
+        name: str = "checkpoint",
+        save_full: bool = False,
+    ) -> None:
+        checkpoint = {"model_state_dict": self._model.state_dict()}
+        if save_full:
+            checkpoint.update(
+                {
+                    "optimizer_state_dict": self._optimizer.state_dict(),
+                    "train_losses": self._train_losses,
+                    "val_losses": self._val_losses,
+                    "learning_rates": self._learning_rates,
+                }
+            )
+        torch.save(checkpoint, self._output_dir / f"{name}.pt")
 
     def plot(self) -> None:
-        x = list(range(1, len(self.__train_losses) + 1))
+        x = list(range(1, len(self._train_losses) + 1))
         for curve in ("Loss", "Learning Rate"):
             plt.figure()
 
             if curve == "Loss":
-                plt.plot(x, self.__train_losses, "b-", label="Train")
-                if len(self.__val_losses) > 0:
-                    plt.plot(x, self.__val_losses, "r-", label="Val")
+                plt.plot(x, self._train_losses, "b-", label="Train")
+                if len(self._val_losses) > 0:
+                    plt.plot(x, self._val_losses, "r-", label="Val")
+                plt.legend()
             else:
-                plt.plot(x, self.__learning_rates, "g-")
+                plt.plot(x, self._learning_rates, "g-")
 
-            plt.legend()
             plt.title(f"{curve} vs. Epoch")
             plt.xlabel("Epoch")
             plt.ylabel(curve)
             plt.tight_layout()
-            plt.savefig(
-                self.__output_dir / f"{curve.lower().replace(' ', '_')}.png",
-                dpi=300,
-            )
+            plt.savefig(self._output_dir / f"{curve.lower().replace(' ', '_')}.png", dpi=300)
             plt.close()
 
     @staticmethod
