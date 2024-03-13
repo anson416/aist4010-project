@@ -159,9 +159,10 @@ class AASR(nn.Module):
         levels: Sequence[tuple[int, int]],
         in_channels: int = 3,
         out_channels: int = 3,
-        n_recurrent: int = 0,
-        use_channel_attention: bool = False,
-        use_attention_gate: bool = False,
+        n_recurrent: int = 1,
+        use_channel_attention: bool = True,
+        use_attention_gate: bool = True,
+        add_bilinear: bool = True,
         downsampler: Literal["conv2d", "maxpool2d"] = "conv2d",
         upsampler: Literal["bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
         stochastic_depth_prob: float = 0.0,
@@ -169,8 +170,6 @@ class AASR(nn.Module):
         **kwargs: Any,
     ) -> None:
         super().__init__()
-        configs = locals()
-
         self.block = block
         self.levels = levels
         self.in_channels = in_channels
@@ -178,6 +177,7 @@ class AASR(nn.Module):
         self.n_recurrent = n_recurrent
         self.use_channel_attention = use_channel_attention
         self.use_attention_gate = use_attention_gate
+        self.add_bilinear = add_bilinear
         self.downsampler = downsampler
         self.upsampler = upsampler
         self.stochastic_depth_prob = stochastic_depth_prob
@@ -198,10 +198,10 @@ class AASR(nn.Module):
     def forward(
         self,
         x: Tensor,
-        scale_factor: float | tuple[float] | tuple[float, float] = 1.0,
+        scale_factor: float | tuple[float, float] = 1.0,
     ) -> tuple[Tensor, Tensor]:
         if isinstance(scale_factor, float):
-            scale_factor = (scale_factor,)
+            scale_factor = (scale_factor, scale_factor)
 
         assert all(map(lambda x: x >= 1.0, scale_factor))
         assert len(x.shape) == 4
@@ -233,7 +233,10 @@ class AASR(nn.Module):
                     decoded.append(out)
                     encoded.pop()
 
-        return self.output(self.concat(bilinear(x), bilinear(out))), self.auxiliary(out)
+        auxiliary = self.auxiliary(out)
+        out = self.output(self.concat(bilinear(x), bilinear(out))) if self.add_bilinear else self.output(bilinear(out))
+
+        return out, auxiliary
 
     def initialize_weights(self) -> None:
         for m in self.modules():
@@ -300,7 +303,7 @@ class AASR(nn.Module):
         return nn.Sequential(
             RecurrentAttentionBlock(
                 self.block,
-                channels := self.in_channels + self.levels[0][0],
+                channels := self.in_channels * self.add_bilinear + self.levels[0][0],
                 n_recurrent=self.n_recurrent,
                 use_attention=self.use_channel_attention,
                 reduction=self.reduction,
