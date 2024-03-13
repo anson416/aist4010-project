@@ -22,20 +22,21 @@ class RecurrentAttentionBlock(nn.Module):
         block: Type[nn.Module],
         channels: int,
         n_recurrent: int = 0,
-        attention: bool = False,
-        reduction: int = 16,
+        use_attention: bool = False,
         stochastic_depth_prob: float = 0.0,
+        reduction: int = 16,
         **kwargs: Any,
     ) -> None:
         super().__init__()
         self.block = block
         self.channels = channels
         self.n_recurrent = n_recurrent
-        self.attention = attention
+        self.use_attention = use_attention
         self.stochastic_depth_prob = stochastic_depth_prob
+        self.reduction = reduction
 
         self.bottleneck = block(channels, **kwargs)
-        self.channel_attention = ChannelAttention(channels, reduction=reduction) if attention else nn.Identity()
+        self.channel_attention = ChannelAttention(channels, reduction=reduction) if use_attention else nn.Identity()
         self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row")
 
     def forward(self, x: Tensor) -> Tensor:
@@ -70,8 +71,10 @@ class ResNetBlockV2(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(channels, channels, kernel_size=3, padding="same", bias=False),
             nn.BatchNorm2d(channels),
+            nn.ReLU(inplace=True),
             nn.Conv2d(channels, expanded, kernel_size=1, bias=False),
             nn.BatchNorm2d(expanded),
+            nn.ReLU(inplace=True),
             nn.Conv2d(expanded, channels, kernel_size=1),
         )
 
