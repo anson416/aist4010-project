@@ -1,4 +1,6 @@
 # User-defined
+*.jpg
+*.png
 *.pt
 *test*.py
 
