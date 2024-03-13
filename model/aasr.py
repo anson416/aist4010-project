@@ -14,6 +14,7 @@ __all__ = [
     "aasr_small",
     "aasr_base",
     "aasr_large",
+    "aasr_xlarge",
     "aasr_huge",
 ]
 
@@ -328,10 +329,9 @@ def aasr_small(**kwargs: Any) -> AASR:
     return AASR(
         ConvNeXtBlock,
         (
-            (64, 2),
-            (128, 2),
-            (256, 2),
-            (512, 2),
+            (32, 4),
+            (64, 6),
+            (128, 4),
         ),
         **kwargs,
     )
@@ -343,9 +343,8 @@ def aasr_base(**kwargs: Any) -> AASR:
         (
             (64, 3),
             (128, 3),
-            (256, 3),
-            (512, 9),
-            (1024, 3),
+            (256, 9),
+            (512, 3),
         ),
         **kwargs,
     )
@@ -355,11 +354,23 @@ def aasr_large(**kwargs: Any) -> AASR:
     return AASR(
         ConvNeXtBlock,
         (
+            (64, 3),
+            (128, 3),
+            (256, 27),
+            (512, 3),
+        ),
+        **kwargs,
+    )
+
+
+def aasr_xlarge(**kwargs: Any) -> AASR:
+    return AASR(
+        ConvNeXtBlockV2,
+        (
             (96, 3),
             (192, 3),
-            (384, 3),
-            (768, 9),
-            (1536, 3),
+            (384, 9),
+            (768, 3),
         ),
         **kwargs,
     )
@@ -371,7 +382,7 @@ def aasr_huge(**kwargs: Any) -> AASR:
         (
             (96, 3),
             (192, 3),
-            (384, 3),
+            (384, 9),
             (768, 27),
             (1536, 3),
         ),
