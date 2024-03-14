@@ -2,7 +2,7 @@
 # File: model/aasr.py
 
 from collections.abc import Sequence
-from typing import Any, Literal, Type
+from typing import Any, Literal, Optional, Type
 
 from torch import Tensor, nn
 
@@ -24,26 +24,26 @@ class Downsampler(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        scale_factor: int,
+        scale: int,
         mode: Literal["conv2d", "maxpool2d"] = "conv2d",
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.scale_factor = scale_factor
+        self.scale = scale
         self.mode = mode
 
-        if scale_factor == 1:
+        if scale == 1:
             self.downsampler = nn.Identity()
         else:
             if mode == "conv2d":
                 self.downsampler = nn.Sequential(
-                    LayerNorm2d(in_channels, eps=1e-6),
-                    nn.Conv2d(in_channels, out_channels, kernel_size=scale_factor, stride=scale_factor),
+                    LayerNorm2d(in_channels, eps=1e-12),
+                    nn.Conv2d(in_channels, out_channels, kernel_size=scale, stride=scale),
                 )
             elif mode == "maxpool2d":
                 self.downsampler = nn.Sequential(
-                    nn.MaxPool2d(kernel_size=scale_factor, stride=scale_factor),
+                    nn.MaxPool2d(kernel_size=scale, stride=scale),
                     ChannelModification(in_channels, out_channels),
                 )
             else:
@@ -58,32 +58,32 @@ class Upsampler(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        scale_factor: int,
+        scale: int,
         mode: Literal["bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.scale_factor = scale_factor
+        self.scale = scale
         self.mode = mode
 
-        if scale_factor == 1:
+        if scale == 1:
             self.upsampler = nn.Identity()
         else:
             if mode == "bilinear":
                 self.upsampler = nn.Sequential(
-                    nn.Upsample(scale_factor=scale_factor, mode=mode),
+                    nn.Upsample(scale_factor=scale, mode=mode),
                     ChannelModification(in_channels, out_channels),
                 )
             elif mode == "convtranspose2d":
                 self.upsampler = nn.Sequential(
-                    nn.ConvTranspose2d(in_channels, out_channels, kernel_size=scale_factor, stride=scale_factor),
                     LayerNorm2d(in_channels, eps=1e-12),
+                    nn.ConvTranspose2d(in_channels, out_channels, kernel_size=scale, stride=scale),
                 )
             elif mode == "pixelshuffle":
                 self.upsampler = nn.Sequential(
-                    ChannelModification(in_channels, out_channels * scale_factor**2),
-                    nn.PixelShuffle(scale_factor),
+                    ChannelModification(in_channels, out_channels * scale**2),
+                    nn.PixelShuffle(scale),
                 )
             else:
                 raise ValueError(f'Unknown value "{mode}" for `mode`.')
@@ -198,19 +198,24 @@ class AASR(nn.Module):
     def forward(
         self,
         x: Tensor,
-        scale_factor: float | tuple[float, float] = 1.0,
+        size: Optional[int | tuple[int, int]] = None,
+        scale: float | tuple[float, float] = 1.0,
     ) -> tuple[Tensor, Tensor]:
-        if isinstance(scale_factor, float):
-            scale_factor = (scale_factor, scale_factor)
+        if isinstance(scale, float):
+            scale = (scale, scale)
 
-        assert all(map(lambda x: x >= 1.0, scale_factor))
+        assert all(map(lambda x: x >= 1.0, scale))
         assert len(x.shape) == 4
         assert x.shape[1] == self.in_channels
         assert x.shape[2] % (1 << (len(self.levels) - 1)) == 0
         assert x.shape[3] % (1 << (len(self.levels) - 1)) == 0
 
         # Instantiate a bilinear upsampler for later use
-        bilinear = nn.Upsample(scale_factor=scale_factor, mode="bilinear")
+        bilinear = (
+            nn.Upsample(scale_factor=scale, mode="bilinear")
+            if size is None
+            else nn.Upsample(size=size, mode="bilinear")
+        )
 
         out = self.stem(x)
 

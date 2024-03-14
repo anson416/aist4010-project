@@ -4,7 +4,7 @@
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,7 +23,7 @@ class PyTorchPipeline(object):
         model: nn.Module,
         criterion: nn.Module,
         optimizer: Optimizer,
-        scheduler: Optional[Union[LRScheduler, ReduceLROnPlateau]] = None,
+        scheduler: Optional[LRScheduler] = None,
         device: torch.device = torch.device("cpu"),
     ) -> None:
         self._model = model
@@ -114,7 +114,7 @@ class PyTorchPipeline(object):
 
         return np.mean(losses)
 
-    @torch.no_grad()
+    @torch.no_grad()  # Turn off gradient descent
     def validate(self, dataloader: DataLoader) -> floating:
         self._model.eval()
 
