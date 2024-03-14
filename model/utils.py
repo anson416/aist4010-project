@@ -30,7 +30,7 @@ class ChannelModification(nn.Module):
 
         self.modification = (
             nn.Sequential(
-                LayerNorm2d(in_channels, eps=1e-6),
+                LayerNorm2d(in_channels, eps=1e-12),
                 nn.Conv2d(in_channels, out_channels, kernel_size=1),
             )
             if in_channels != out_channels
@@ -115,7 +115,7 @@ class AttentionGate(nn.Module):
         self.attention = nn.Sequential(
             nn.GELU(),
             ChannelModification(channels, 1),
-            LayerNorm2d(1, eps=1e-6),
+            LayerNorm2d(1, eps=1e-12),
             nn.Sigmoid(),
         )
 

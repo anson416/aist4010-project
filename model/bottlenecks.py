@@ -105,7 +105,7 @@ class ConvNeXtBlock(nn.Module):
         expanded = channels * expansion
         self.block = nn.Sequential(
             nn.Conv2d(channels, channels, kernel_size=7, padding="same", groups=channels),
-            LayerNorm2d(channels, eps=1e-6),
+            LayerNorm2d(channels, eps=1e-12),
             nn.Conv2d(channels, expanded, kernel_size=1),
             nn.GELU(),
             nn.Conv2d(expanded, channels, kernel_size=1),
@@ -137,7 +137,7 @@ class ConvNeXtBlockV2(nn.Module):
         expanded = channels * expansion
         self.block = nn.Sequential(
             nn.Conv2d(channels, channels, kernel_size=7, padding="same", groups=channels),
-            LayerNorm2d(channels, eps=1e-6),
+            LayerNorm2d(channels, eps=1e-12),
             nn.Conv2d(channels, expanded, kernel_size=1),
             nn.GELU(),
             GRN(expanded),
