@@ -51,6 +51,14 @@ class LRLambda(object):
         return lr
 
     @classmethod
+    def linear(cls, *args: Any, **kwargs: Any) -> "LRLambda":
+        return cls(
+            lambda epoch, epochs, max_lr, min_lr: (min_lr - max_lr) / epochs * epoch + max_lr,
+            *args,
+            **kwargs,
+        )
+
+    @classmethod
     def cosine_decay(cls, *args: Any, **kwargs: Any) -> "LRLambda":
         return cls(
             lambda epoch, epochs, max_lr, min_lr: ((max_lr - min_lr) / 2) * (np.cos((epoch / epochs) * np.pi) + 1)
