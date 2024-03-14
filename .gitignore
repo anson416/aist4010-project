@@ -1,12 +1,13 @@
 # User-defined
 data/
+train/
 *.gz
 *.jpg
 *.png
 *.pt
 *.tar
 *.zip
-*test*.py
+*testing*.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
