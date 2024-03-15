@@ -14,22 +14,37 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
 from tqdm import tqdm
 
-from lr_lambda import LRLambda
-from model import aasr_tiny
-from pytorch_pipeline import PyTorchPipeline
-from utils import iter_files
+from model import *
+from utils.file_ops import iter_files
+from utils.lr_lambda import LRLambda
+from utils.pytorch_pipeline import PyTorchPipeline
 
-BATCH_SIZE: int = 2
-EPOCHS: int = 50
-MAX_LR: float = 1e-4
+CONFIGS = {
+    "levels": BASE,
+    "block": "ConvNeXtBlock",
+    "n_recurrent": 1,
+    "use_channel_attention": True,
+    "use_attention_gate": True,
+    "add_bilinear": True,
+    "downsampler": "conv2d",
+    "upsampler": "pixelshuffle",
+    "stochastic_depth_prob": 0.0,
+}
+
+TRAIN_DIR = "./data/train/DIV2K"
+VAL_DIR = "./data/valid"
+
+BATCH_SIZE: int = 16
+EPOCHS: int = 10
+MAX_LR: float = 1e-3
 MIN_LR: float = 1e-4
 WARMUP: int = 0
 EARLY_MIN: int = 0
-WEIGHT_DECAY: float = 1e-3
+WEIGHT_DECAY: float = 1e-4
 
 IMG_SIZE: int = 64
-MAX_SCALE: int = 8
-TRAIN_PCT: int = 0.2
+MAX_SCALE: int = 4
+TRAIN_PCT: float = 0.1
 
 
 class SRDataset(Dataset):
@@ -60,13 +75,13 @@ class TrainingPipeline(PyTorchPipeline):
         self._model.train()
 
         losses = []
-        for batch in tqdm(dataloader, desc="Training"):
+        for batch in tqdm(dataloader, desc="Training", leave=False):
             batch = batch.to(self._device)
-            for scale in rng.choice(train_scales, size=(int(len(train_scales) * TRAIN_PCT), 2)).tolist():
+            for scale in train_scales[rng.choice(n := len(train_scales), int(n * TRAIN_PCT), replace=False)]:
                 size = (int(IMG_SIZE * scale[0]), int(IMG_SIZE * scale[1]))
                 y = K.RandomCrop(size, same_on_batch=False)(batch)
                 y_aux = K.Resize((IMG_SIZE, IMG_SIZE))(y)
-                x = input_aug(y_aux)
+                x = train_x_aug(y_aux)
 
                 # Feedforward
                 pred, aux = self._model(x, size=size)
@@ -88,13 +103,13 @@ class TrainingPipeline(PyTorchPipeline):
         self._model.eval()
 
         losses = []
-        for batch in tqdm(dataloader, desc="Validating"):
+        for batch in tqdm(dataloader, desc="Validating", leave=False):
             batch = batch.to(self._device)
-            for scale in np.array(np.meshgrid(val_scales, val_scales)).T.reshape(-1, 2).tolist():
+            for scale in val_scales:
                 size = (int(IMG_SIZE * scale[0]), int(IMG_SIZE * scale[1]))
-                y = K.RandomCrop(size, same_on_batch=False)(batch)
+                y = K.CenterCrop(size)(batch)
                 y_aux = K.Resize((IMG_SIZE, IMG_SIZE))(y)
-                x = input_aug(y_aux)
+                x = val_x_aug(y_aux)
 
                 # Feedforward
                 pred, aux = self._model(x, size=size)
@@ -110,16 +125,18 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 rng = np.random.default_rng()
 train_scales = np.arange(1.0, MAX_SCALE + 0.1, 0.1)
+train_scales = np.array(np.meshgrid(train_scales, train_scales)).T.reshape(-1, 2)
 val_scales = np.arange(1.0, MAX_SCALE + 0.5, 0.5)
+val_scales = np.array(np.meshgrid(val_scales, val_scales)).T.reshape(-1, 2)
 
-train_transform = v2.Compose(
+train_y_aug = v2.Compose(
     [
         v2.RandomCrop(IMG_SIZE * MAX_SCALE, pad_if_needed=True),
         v2.RandomHorizontalFlip(p=0.5),
         v2.RandomVerticalFlip(p=0.5),
-        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
-        v2.RandomAutocontrast(p=0.3),
-        v2.RandomAdjustSharpness(2, p=0.3),
+        v2.RandomApply(nn.ModuleList([v2.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.3)]), p=0.2),
+        v2.RandomAutocontrast(p=0.2),
+        v2.RandomAdjustSharpness(2, p=0.2),
         v2.RandomEqualize(p=0.2),
         v2.RandomInvert(p=0.1),
         v2.RandomGrayscale(p=0.1),
@@ -127,30 +144,35 @@ train_transform = v2.Compose(
         v2.ToDtype(torch.float32, scale=True),
     ]
 )
-val_transform = v2.Compose(
+val_y_aug = v2.Compose(
     [
         v2.CenterCrop(IMG_SIZE * MAX_SCALE),
         v2.ToImage(),
         v2.ToDtype(torch.float32, scale=True),
     ]
 )
-input_aug = K.AugmentationSequential(
-    K.RandomJPEG(p=0.5),
-    K.RandomBoxBlur(kernel_size=(3, 3), p=0.2),
-    K.RandomGaussianBlur(kernel_size=(3, 3), sigma=(1, 1), p=0.2),
-    K.RandomMedianBlur(kernel_size=(3, 3), p=0.2),
-    K.RandomMotionBlur(kernel_size=9, angle=180, direction=1, p=0.2),
+train_x_aug = K.AugmentationSequential(
+    K.RandomBoxBlur(kernel_size=(3, 3), p=0.125),
+    K.RandomGaussianBlur(kernel_size=(3, 3), sigma=(0.1, 2), p=0.125),
+    K.RandomMedianBlur(kernel_size=(3, 3), p=0.125),
+    K.RandomMotionBlur(kernel_size=3, angle=180, direction=1, p=0.125),
     K.RandomGaussianNoise(p=0.25),
     K.RandomSaltAndPepperNoise(p=0.25),
+    # K.RandomJPEG(p=0.5),
     same_on_batch=False,
 )
+val_x_aug = v2.Compose(
+    [
+        v2.RandomApply(nn.ModuleList([v2.GaussianBlur(kernel_size=(3, 3), sigma=1)]), p=0.5),
+    ]
+)
 
-train_data = SRDataset("./data/train/DIV2K", transform=train_transform)
+train_data = SRDataset(TRAIN_DIR, transform=train_y_aug)
 train_dataloader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, persistent_workers=True)
-val_data = SRDataset("./data/valid", transform=val_transform)
+val_data = SRDataset(VAL_DIR, transform=val_y_aug)
 val_dataloader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, persistent_workers=True)
 
-model = aasr_tiny()
+model = AASR(**CONFIGS).to(device)
 criterion = nn.L1Loss()
 optimizer = torch.optim.AdamW(model.parameters(), lr=1, weight_decay=WEIGHT_DECAY)
 scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -158,5 +180,5 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(
     LRLambda.linear(EPOCHS, MAX_LR, min_lr=MIN_LR, warmup=WARMUP, early_min=EARLY_MIN),
 )
 
-pipeline = TrainingPipeline(model, criterion, optimizer, scheduler=scheduler, device=device)
+pipeline = TrainingPipeline(model, criterion, optimizer, scheduler=scheduler, device=device, configs=CONFIGS)
 pipeline.start(EPOCHS, train_dataloader, val_dataloader=val_dataloader)
