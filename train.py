@@ -115,8 +115,8 @@ train_transform = v2.Compose(
         v2.RandomHorizontalFlip(p=0.5),
         v2.RandomVerticalFlip(p=0.5),
         v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
-        v2.RandomAutocontrast(p=0.5),
-        v2.RandomAdjustSharpness(2, p=0.5),
+        v2.RandomAutocontrast(p=0.3),
+        v2.RandomAdjustSharpness(2, p=0.3),
         v2.RandomEqualize(p=0.2),
         v2.RandomInvert(p=0.1),
         v2.RandomGrayscale(p=0.1),
@@ -132,8 +132,13 @@ val_transform = v2.Compose(
     ]
 )
 input_aug = K.AugmentationSequential(
-    K.RandomGaussianBlur(kernel_size=(3, 3), sigma=(0.5, 0.5)),
-    K.RandomGaussianNoise(),
+    K.RandomJPEG(p=0.5),
+    K.RandomBoxBlur(kernel_size=(3, 3), p=0.2),
+    K.RandomGaussianBlur(kernel_size=(3, 3), sigma=(1, 1), p=0.2),
+    K.RandomMedianBlur(kernel_size=(3, 3), p=0.2),
+    K.RandomMotionBlur(kernel_size=9, angle=180, direction=1, p=0.2),
+    K.RandomGaussianNoise(p=0.25),
+    K.RandomSaltAndPepperNoise(p=0.25),
     same_on_batch=False,
 )
 
