@@ -29,7 +29,6 @@ WEIGHT_DECAY: float = 1e-3
 
 IMG_SIZE: int = 64
 MAX_SCALE: int = 8
-STEP: float = 0.1
 TRAIN_PCT: int = 0.2
 
 
@@ -63,8 +62,7 @@ class TrainingPipeline(PyTorchPipeline):
         losses = []
         for batch in tqdm(dataloader, desc="Training"):
             batch = batch.to(self._device)
-            # for scale in rng.choice(scales, size=(int(len(scales) * TRAIN_PCT), 2)).tolist():
-            for scale in rng.choice(scales, size=(1, 2)).tolist():
+            for scale in rng.choice(train_scales, size=(int(len(train_scales) * TRAIN_PCT), 2)).tolist():
                 size = (int(IMG_SIZE * scale[0]), int(IMG_SIZE * scale[1]))
                 y = K.RandomCrop(size, same_on_batch=False)(batch)
                 y_aux = K.Resize((IMG_SIZE, IMG_SIZE))(y)
@@ -107,7 +105,8 @@ class TrainingPipeline(PyTorchPipeline):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 rng = np.random.default_rng()
-scales = np.arange(1.0, MAX_SCALE + STEP, STEP)
+train_scales = np.arange(1.0, MAX_SCALE + 0.1, 0.1)
+val_scales = np.arange(1.0, MAX_SCALE + 0.5, 0.5)
 
 train_transform = v2.Compose(
     [
