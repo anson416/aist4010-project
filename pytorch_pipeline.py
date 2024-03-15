@@ -4,9 +4,10 @@
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import numpy as np
 import torch
 from numpy import floating
@@ -25,24 +26,29 @@ class PyTorchPipeline(object):
         optimizer: Optimizer,
         scheduler: Optional[LRScheduler] = None,
         device: torch.device = torch.device("cpu"),
+        save_full: bool = False,
+        precision: int = 3,
+        **kwargs: Any,
     ) -> None:
         self._model = model
         self._criterion = criterion
         self._optimizer = optimizer
         self._scheduler = scheduler
         self._device = device
+        self._save_full = save_full
+        self._precision = precision
+        self._kwargs = kwargs
         self._output_dir: Optional[Path] = None
-        self._best_loss: Optional[float] = None
+        self._learning_rates: list[float] = []
         self._train_losses: list[float] = []
         self._val_losses: list[float] = []
-        self._learning_rates: list[float] = []
+        self._best_loss: Optional[float] = None
 
     def start(
         self,
         epochs: int,
         train_dataloader: DataLoader,
         val_dataloader: Optional[DataLoader] = None,
-        save_full: bool = False,
     ) -> str:
         if val_dataloader is None and self._scheduler is not None:
             assert not isinstance(self._scheduler, ReduceLROnPlateau)
@@ -53,8 +59,6 @@ class PyTorchPipeline(object):
 
         start_time = time.time()
         for epoch in range(1, epochs + 1):
-            print(f"Epoch {epoch}/{epochs}:", flush=True)
-
             # Retrieve learning rate for current epoch
             lr = self._optimizer.param_groups[0]["lr"]
             self._learning_rates.append(lr)
@@ -72,21 +76,21 @@ class PyTorchPipeline(object):
                 self._scheduler.step(val_loss if isinstance(self._scheduler, ReduceLROnPlateau) else None)
 
             # Save current and best-performing (lowest loss) models
-            self.save_checkpoint("checkpoint_last", save_full=save_full)
+            self.save_checkpoint("checkpoint_last")
             if val_loss is not None and (self._best_loss is None or val_loss < self._best_loss):
                 self._best_loss = val_loss
-                self.save_checkpoint("checkpoint_best", save_full=save_full)
+                self.save_checkpoint("checkpoint_best")
 
             # Plot training curves (losses and learning rates)
             self.plot()
 
             # Display epoch information
             print(
-                f"Epoch {epoch}/{epochs} -",
-                f"train_loss: {train_loss:.3f},",
-                f"{f'val_loss: {val_loss:.3f},' if val_loss is not None else ''}",
+                f"Epoch {epoch:{len(str(epochs))}d}/{epochs} -",
+                f"train_loss: {train_loss:.{self._precision}f},",
+                f"{f'val_loss: {val_loss:.{self._precision}f},' if val_loss is not None else ''}",
                 f"lr: {lr},",
-                f"ETR: {self.get_etr(epoch, epochs, time.time() - start_time)}\n",
+                f"ETR: {self.get_etr(epoch, epochs, time.time() - start_time)}",
                 flush=True,
             )
 
@@ -96,7 +100,7 @@ class PyTorchPipeline(object):
         self._model.train()
 
         losses = []
-        for X, y in tqdm(dataloader, desc="Training"):
+        for X, y in tqdm(dataloader, desc="Training", leave=False):
             # Load a batch of data
             X, y = X.to(self._device), y.to(self._device)
 
@@ -119,7 +123,7 @@ class PyTorchPipeline(object):
         self._model.eval()
 
         losses = []
-        for X, y in tqdm(dataloader, desc="Validating"):
+        for X, y in tqdm(dataloader, desc="Validating", leave=False):
             # Load a batch of data
             X, y = X.to(self._device), y.to(self._device)
 
@@ -132,13 +136,10 @@ class PyTorchPipeline(object):
 
         return np.mean(losses)
 
-    def save_checkpoint(
-        self,
-        name: str = "checkpoint",
-        save_full: bool = False,
-    ) -> None:
+    def save_checkpoint(self, name: str = "checkpoint") -> None:
         checkpoint = {"model_state_dict": self._model.state_dict()}
-        if save_full:
+        checkpoint.update(self._kwargs)
+        if self._save_full:
             checkpoint.update(
                 {
                     "optimizer_state_dict": self._optimizer.state_dict(),
@@ -161,6 +162,10 @@ class PyTorchPipeline(object):
                 plt.legend()
             else:
                 plt.plot(x, self._learning_rates, "g-")
+
+            # Show only integers on the x-axis
+            ax = plt.gca()
+            ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
 
             plt.title(f"{curve} vs. Epoch")
             plt.xlabel("Epoch")
@@ -189,3 +194,47 @@ class PyTorchPipeline(object):
     @staticmethod
     def get_datetime(sep: str = "-") -> str:
         return datetime.now().strftime(f"%Y%m%d{sep}%H%M%S")
+
+
+# For testing purposes
+if __name__ == "__main__":
+    from torch import Tensor
+    from torch.utils.data import Dataset
+
+    DIM = 10
+    EPOCHS = 20
+    BATCH_SIZE = 16
+    LEARNING_RATE = 1e-3
+
+    class DummyDataset(Dataset):
+        def __init__(self, size: int, dim: int) -> None:
+            super().__init__()
+            self.x = torch.rand(size, dim)
+            self.y = torch.where(self.x.sum(dim=1) >= dim / 2, 1, 0)
+
+        def __getitem__(self, index: int) -> Tensor:
+            return self.x[index], self.y[index].unsqueeze(0).float()
+
+        def __len__(self) -> int:
+            return len(self.x)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    train_data = DummyDataset(BATCH_SIZE * 100, DIM)
+    train_dataloader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
+    val_data = DummyDataset(BATCH_SIZE * 10, DIM)
+    val_dataloader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=True)
+
+    model = nn.Sequential(
+        nn.Linear(DIM, DIM * 10),
+        nn.ReLU(),
+        nn.Linear(DIM * 10, DIM * 5),
+        nn.ReLU(),
+        nn.Linear(DIM * 5, 1),
+    )
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=EPOCHS // 2, gamma=0.1)
+
+    pipeline = PyTorchPipeline(model, criterion, optimizer, scheduler=scheduler, device=device)
+    pipeline.start(EPOCHS, train_dataloader, val_dataloader=val_dataloader)
