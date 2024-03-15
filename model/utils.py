@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 # File: model/utils.py
 
+from typing import Any, Type
+
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
+from torchvision.ops.stochastic_depth import StochasticDepth
 
 
 class LayerNorm2d(nn.LayerNorm):
@@ -30,7 +33,7 @@ class ChannelModification(nn.Module):
 
         self.modification = (
             nn.Sequential(
-                LayerNorm2d(in_channels, eps=1e-12),
+                LayerNorm2d(in_channels, eps=1e-6),
                 nn.Conv2d(in_channels, out_channels, kernel_size=1),
             )
             if in_channels != out_channels
@@ -48,6 +51,43 @@ class Concatenation(nn.Module):
 
     def forward(self, *inputs: Tensor) -> Tensor:
         return torch.cat(inputs, dim=self.dim)
+
+
+class RecurrentAttentionBlock(nn.Module):
+    """
+    Reference: [Recurrent Residual Convolutional Neural Network based on U-Net (R2U-Net) for Medical Image Segmentation](https://arxiv.org/abs/1802.06955)
+
+    Source: https://github.com/navamikairanda/R2U-Net/blob/main/r2unet.py
+    """
+
+    def __init__(
+        self,
+        block: Type[nn.Module],
+        channels: int,
+        n_recurrent: int = 0,
+        use_attention: bool = False,
+        stochastic_depth_prob: float = 0.0,
+        reduction: int = 16,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__()
+        self.block = block
+        self.channels = channels
+        self.n_recurrent = n_recurrent
+        self.use_attention = use_attention
+        self.stochastic_depth_prob = stochastic_depth_prob
+        self.reduction = reduction
+
+        self.bottleneck = block(channels, **kwargs)
+        self.channel_attention = ChannelAttention(channels, reduction=reduction) if use_attention else nn.Identity()
+        self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row")
+
+    def forward(self, x: Tensor) -> Tensor:
+        out = self.bottleneck(x)
+        for _ in range(self.n_recurrent):
+            out = self.bottleneck(x + out)
+        out = self.channel_attention(out)
+        return x + self.stochastic_depth(out)
 
 
 # Global Response Normalization
@@ -115,7 +155,7 @@ class AttentionGate(nn.Module):
         self.attention = nn.Sequential(
             nn.GELU(),
             ChannelModification(channels, 1),
-            LayerNorm2d(1, eps=1e-12),
+            LayerNorm2d(1, eps=1e-6),
             nn.Sigmoid(),
         )
 
