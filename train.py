@@ -88,16 +88,20 @@ class TrainingPipeline(PyTorchPipeline):
         self._model.eval()
 
         losses = []
-        for X in tqdm(dataloader, desc="Validating"):
-            # Load a batch of data
-            X = X.to(self._device)
+        for batch in tqdm(dataloader, desc="Validating"):
+            batch = batch.to(self._device)
+            for scale in np.array(np.meshgrid(val_scales, val_scales)).T.reshape(-1, 2).tolist():
+                size = (int(IMG_SIZE * scale[0]), int(IMG_SIZE * scale[1]))
+                y = K.RandomCrop(size, same_on_batch=False)(batch)
+                y_aux = K.Resize((IMG_SIZE, IMG_SIZE))(y)
+                x = input_aug(y_aux)
 
-            # Feedforward
-            pred = self._model(X)
+                # Feedforward
+                pred, aux = self._model(x, size=size)
 
-            # Loss
-            loss = self._criterion(pred, y)
-            losses.append(loss.item())
+                # Loss
+                loss = self._criterion(pred, y) + self._criterion(aux, y_aux)
+                losses.append(loss.item())
 
         return np.mean(losses)
 
