@@ -1,22 +1,37 @@
 # -*- coding: utf-8 -*-
 # File: model/aasr.py
 
+# import sys
 from collections.abc import Sequence
 from typing import Any, Literal, Optional, Type
 
 from torch import Tensor, nn
 
-from .bottlenecks import ConvNeXtBlock, ConvNeXtBlockV2, RecurrentAttentionBlock
-from .utils import AttentionGate, ChannelModification, Concatenation, LayerNorm2d
+from . import bottlenecks
+from .utils import (
+    AttentionGate,
+    ChannelModification,
+    Concatenation,
+    LayerNorm2d,
+    RecurrentAttentionBlock,
+)
 
 __all__ = [
-    "aasr_tiny",
-    "aasr_small",
-    "aasr_base",
-    "aasr_large",
-    "aasr_xlarge",
-    "aasr_huge",
+    "AASR",
+    "TINY",
+    "SMALL",
+    "BASE",
+    "LARGE",
+    "XLARGE",
+    "HUGE",
 ]
+
+TINY = ((16, 2), (32, 2))  # ~39K parameters
+SMALL = ((32, 4), (64, 6), (128, 4))  # ~1M parameters
+BASE = ((64, 3), (128, 3), (256, 9), (512, 3))  # ~18M parameters
+LARGE = ((64, 3), (128, 3), (256, 27), (512, 3))  # ~28M parameters
+XLARGE = ((96, 3), (192, 3), (384, 9), (768, 3))  # ~41M parameters
+HUGE = ((96, 3), (192, 3), (384, 9), (768, 27), (1536, 3))  # ~308M parameters
 
 
 class Downsampler(nn.Module):
@@ -38,7 +53,7 @@ class Downsampler(nn.Module):
         else:
             if mode == "conv2d":
                 self.downsampler = nn.Sequential(
-                    LayerNorm2d(in_channels, eps=1e-12),
+                    LayerNorm2d(in_channels, eps=1e-6),
                     nn.Conv2d(in_channels, out_channels, kernel_size=scale, stride=scale),
                 )
             elif mode == "maxpool2d":
@@ -77,7 +92,7 @@ class Upsampler(nn.Module):
                 )
             elif mode == "convtranspose2d":
                 self.upsampler = nn.Sequential(
-                    LayerNorm2d(in_channels, eps=1e-12),
+                    LayerNorm2d(in_channels, eps=1e-6),
                     nn.ConvTranspose2d(in_channels, out_channels, kernel_size=scale, stride=scale),
                 )
             elif mode == "pixelshuffle":
@@ -155,10 +170,10 @@ class Collector(nn.Module):
 class AASR(nn.Module):
     def __init__(
         self,
-        block: Type[nn.Module],
-        levels: Sequence[tuple[int, int]],
+        levels: Sequence[tuple[int, int]] = SMALL,
         in_channels: int = 3,
         out_channels: int = 3,
+        block: str | Type[nn.Module] = "ConvNeXtBlock",
         n_recurrent: int = 1,
         use_channel_attention: bool = True,
         use_attention_gate: bool = True,
@@ -169,8 +184,10 @@ class AASR(nn.Module):
         init_weights: bool = True,
         **kwargs: Any,
     ) -> None:
+        assert len(levels) >= 2
+
         super().__init__()
-        self.block = block
+        self.block = getattr(bottlenecks, block) if isinstance(block, str) else block
         self.levels = levels
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -255,32 +272,37 @@ class AASR(nn.Module):
 
     def __make_encoder(self) -> nn.ModuleList:
         encoder = nn.ModuleList()
+
+        total_blocks = sum(lvl[1] for lvl in self.levels)
+        block_id = 1
         for idx, (channels, n_blocks) in enumerate(self.levels):
-            blocks = nn.Sequential(
-                *[
+            blocks: list[nn.Module] = []
+            for _ in range(n_blocks):
+                blocks.append(
                     RecurrentAttentionBlock(
                         self.block,
                         channels,
                         n_recurrent=self.n_recurrent,
                         use_attention=self.use_channel_attention,
                         reduction=self.reduction,
-                        stochastic_depth_prob=self.stochastic_depth_prob,
+                        stochastic_depth_prob=self.stochastic_depth_prob * block_id / total_blocks,
                         **self.kwargs,
                     )
-                    for _ in range(n_blocks)
-                ]
-            )
-            level = nn.ModuleList([blocks])  # Length of `level` is 1 if no downsampler is needed (at the last level)
+                )
+                block_id += 1
+            level = nn.ModuleList([nn.Sequential(*blocks)])  # Only one element at the last level
 
             # Downsample
             if idx != len(self.levels) - 1:  # Except the last level
                 level.append(Downsampler(channels, self.levels[idx + 1][0], 2, mode=self.downsampler))
 
             encoder.append(level)
+
         return encoder
 
     def __make_decoder(self) -> nn.ModuleList:
         decoder = nn.ModuleList()
+
         for idx, (channels, _) in enumerate(self.levels[-2::-1], start=2):
             level = nn.ModuleList(
                 [
@@ -302,6 +324,7 @@ class AASR(nn.Module):
                 ]
             )
             decoder.append(level)
+
         return decoder
 
     def __make_output(self) -> nn.Sequential:
@@ -323,79 +346,3 @@ class AASR(nn.Module):
             ChannelModification(self.levels[0][0], self.out_channels),
             nn.Sigmoid(),
         )
-
-
-def aasr_tiny(**kwargs: Any) -> AASR:
-    return AASR(
-        ConvNeXtBlock,
-        (
-            (16, 2),
-            (32, 2),
-        ),
-        **kwargs,
-    )
-
-
-def aasr_small(**kwargs: Any) -> AASR:
-    return AASR(
-        ConvNeXtBlock,
-        (
-            (32, 4),
-            (64, 6),
-            (128, 4),
-        ),
-        **kwargs,
-    )
-
-
-def aasr_base(**kwargs: Any) -> AASR:
-    return AASR(
-        ConvNeXtBlock,
-        (
-            (64, 3),
-            (128, 3),
-            (256, 9),
-            (512, 3),
-        ),
-        **kwargs,
-    )
-
-
-def aasr_large(**kwargs: Any) -> AASR:
-    return AASR(
-        ConvNeXtBlock,
-        (
-            (64, 3),
-            (128, 3),
-            (256, 27),
-            (512, 3),
-        ),
-        **kwargs,
-    )
-
-
-def aasr_xlarge(**kwargs: Any) -> AASR:
-    return AASR(
-        ConvNeXtBlockV2,
-        (
-            (96, 3),
-            (192, 3),
-            (384, 9),
-            (768, 3),
-        ),
-        **kwargs,
-    )
-
-
-def aasr_huge(**kwargs: Any) -> AASR:
-    return AASR(
-        ConvNeXtBlockV2,
-        (
-            (96, 3),
-            (192, 3),
-            (384, 9),
-            (768, 27),
-            (1536, 3),
-        ),
-        **kwargs,
-    )
