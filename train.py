@@ -146,9 +146,9 @@ input_aug = K.AugmentationSequential(
 )
 
 train_data = SRDataset("./data/train/DIV2K", transform=train_transform)
-train_dataloader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, persistent_workers=False)
+train_dataloader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, persistent_workers=True)
 val_data = SRDataset("./data/valid", transform=val_transform)
-val_dataloader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, persistent_workers=False)
+val_dataloader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, persistent_workers=True)
 
 model = aasr_tiny()
 criterion = nn.L1Loss()
