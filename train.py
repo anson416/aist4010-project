@@ -28,23 +28,23 @@ CONFIGS = {
     "add_bilinear": True,
     "downsampler": "conv2d",
     "upsampler": "pixelshuffle",
-    "stochastic_depth_prob": 0.0,
+    "stochastic_depth_prob": 0.1,
 }
 
 TRAIN_DIR = "./data/train/DIV2K"
 VAL_DIR = "./data/valid"
 
 BATCH_SIZE: int = 16
-EPOCHS: int = 10
+EPOCHS: int = 20
 MAX_LR: float = 1e-3
-MIN_LR: float = 1e-4
+MIN_LR: float = 1e-3
 WARMUP: int = 0
 EARLY_MIN: int = 0
 WEIGHT_DECAY: float = 1e-4
 
 IMG_SIZE: int = 64
 MAX_SCALE: int = 4
-TRAIN_PCT: float = 0.1
+TRAIN_PCT: float = 0.05
 
 
 class SRDataset(Dataset):
@@ -71,13 +71,18 @@ class SRDataset(Dataset):
 
 class TrainingPipeline(PyTorchPipeline):
     # Override
-    def train(self, dataloader: DataLoader) -> floating:
+    def train(
+        self,
+        dataloader: DataLoader,
+        epoch: int,
+        epochs: int,
+    ) -> floating:
         self._model.train()
 
         losses = []
-        for batch in tqdm(dataloader, desc="Training", leave=False):
+        for batch in tqdm(dataloader, desc=f"{self.get_epoch_str(epoch, epochs)} Training", leave=False):
             batch = batch.to(self._device)
-            for scale in train_scales[rng.choice(n := len(train_scales), int(n * TRAIN_PCT), replace=False)]:
+            for scale in train_scales[rng.choice(n := len(train_scales), max(int(n * TRAIN_PCT), 1), replace=False)]:
                 size = (int(IMG_SIZE * scale[0]), int(IMG_SIZE * scale[1]))
                 y = K.RandomCrop(size, same_on_batch=False)(batch)
                 y_aux = K.Resize((IMG_SIZE, IMG_SIZE))(y)
@@ -99,17 +104,22 @@ class TrainingPipeline(PyTorchPipeline):
 
     # Override
     @torch.no_grad()  # Turn off gradient descent
-    def validate(self, dataloader: DataLoader) -> floating:
+    def validate(
+        self,
+        dataloader: DataLoader,
+        epoch: int,
+        epochs: int,
+    ) -> floating:
         self._model.eval()
 
         losses = []
-        for batch in tqdm(dataloader, desc="Validating", leave=False):
+        for batch in tqdm(dataloader, desc=f"{self.get_epoch_str(epoch, epochs)} Validating", leave=False):
             batch = batch.to(self._device)
             for scale in val_scales:
                 size = (int(IMG_SIZE * scale[0]), int(IMG_SIZE * scale[1]))
                 y = K.CenterCrop(size)(batch)
                 y_aux = K.Resize((IMG_SIZE, IMG_SIZE))(y)
-                x = val_x_aug(y_aux)
+                x = y_aux
 
                 # Feedforward
                 pred, aux = self._model(x, size=size)
@@ -161,11 +171,6 @@ train_x_aug = K.AugmentationSequential(
     # K.RandomJPEG(p=0.5),
     same_on_batch=False,
 )
-val_x_aug = v2.Compose(
-    [
-        v2.RandomApply(nn.ModuleList([v2.GaussianBlur(kernel_size=(3, 3), sigma=1)]), p=0.5),
-    ]
-)
 
 train_data = SRDataset(TRAIN_DIR, transform=train_y_aug)
 train_dataloader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, persistent_workers=True)
@@ -177,7 +182,7 @@ criterion = nn.L1Loss()
 optimizer = torch.optim.AdamW(model.parameters(), lr=1, weight_decay=WEIGHT_DECAY)
 scheduler = torch.optim.lr_scheduler.LambdaLR(
     optimizer,
-    LRLambda.linear(EPOCHS, MAX_LR, min_lr=MIN_LR, warmup=WARMUP, early_min=EARLY_MIN),
+    LRLambda.cosine(EPOCHS, MAX_LR, min_lr=MIN_LR, warmup=WARMUP, early_min=EARLY_MIN),
 )
 
 pipeline = TrainingPipeline(model, criterion, optimizer, scheduler=scheduler, device=device, configs=CONFIGS)
