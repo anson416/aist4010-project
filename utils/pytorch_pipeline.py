@@ -64,11 +64,11 @@ class PyTorchPipeline(object):
             self._learning_rates.append(lr)
 
             # Compute losses for training and validation sets
-            train_loss = self.train(train_dataloader)
+            train_loss = self.train(train_dataloader, epoch, epochs)
             self._train_losses.append(train_loss)
             val_loss: Optional[float] = None
             if val_dataloader is not None:
-                val_loss = self.validate(val_dataloader)
+                val_loss = self.validate(val_dataloader, epoch, epochs)
                 self._val_losses.append(val_loss)
 
             # Update learning rate
@@ -86,7 +86,7 @@ class PyTorchPipeline(object):
 
             # Display epoch information
             print(
-                f"Epoch {epoch:{len(str(epochs))}d}/{epochs} -",
+                f"{self.get_epoch_str(epoch, epochs)} -",
                 f"train_loss: {train_loss:.{self._precision}f},",
                 f"{f'val_loss: {val_loss:.{self._precision}f},' if val_loss is not None else ''}",
                 f"lr: {lr},",
@@ -96,11 +96,16 @@ class PyTorchPipeline(object):
 
         return str(self._output_dir)
 
-    def train(self, dataloader: DataLoader) -> floating:
+    def train(
+        self,
+        dataloader: DataLoader,
+        epoch: int,
+        epochs: int,
+    ) -> floating:
         self._model.train()
 
         losses = []
-        for X, y in tqdm(dataloader, desc="Training", leave=False):
+        for X, y in tqdm(dataloader, desc=f"{self.get_epoch_str(epoch, epochs)} Training", leave=False):
             # Load a batch of data
             X, y = X.to(self._device), y.to(self._device)
 
@@ -119,11 +124,16 @@ class PyTorchPipeline(object):
         return np.mean(losses)
 
     @torch.no_grad()  # Turn off gradient descent
-    def validate(self, dataloader: DataLoader) -> floating:
+    def validate(
+        self,
+        dataloader: DataLoader,
+        epoch: int,
+        epochs: int,
+    ) -> floating:
         self._model.eval()
 
         losses = []
-        for X, y in tqdm(dataloader, desc="Validating", leave=False):
+        for X, y in tqdm(dataloader, desc=f"{self.get_epoch_str(epoch, epochs)} Validating", leave=False):
             # Load a batch of data
             X, y = X.to(self._device), y.to(self._device)
 
@@ -175,7 +185,11 @@ class PyTorchPipeline(object):
             plt.close()
 
     @staticmethod
-    def get_etr(progress: int, total: int, time_elapsed: float) -> str:
+    def get_etr(
+        progress: int,
+        total: int,
+        time_elapsed: float,
+    ) -> str:
         assert total > 0, f"{total} > 0. `total` must be a positive integer."
         assert (
             0 < progress <= total
@@ -195,13 +209,17 @@ class PyTorchPipeline(object):
     def get_datetime(sep: str = "-") -> str:
         return datetime.now().strftime(f"%Y%m%d{sep}%H%M%S")
 
+    @staticmethod
+    def get_epoch_str(epoch: int, epochs: int) -> str:
+        return f"Epoch {epoch:{len(str(epochs))}d}/{epochs}"
+
 
 # For testing purposes
 if __name__ == "__main__":
     from torch import Tensor
     from torch.utils.data import Dataset
 
-    DIM = 10
+    DIM = 200
     EPOCHS = 20
     BATCH_SIZE = 16
     LEARNING_RATE = 1e-3
@@ -222,15 +240,20 @@ if __name__ == "__main__":
 
     train_data = DummyDataset(BATCH_SIZE * 100, DIM)
     train_dataloader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
-    val_data = DummyDataset(BATCH_SIZE * 10, DIM)
+    val_data = DummyDataset(BATCH_SIZE * 50, DIM)
     val_dataloader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=True)
 
     model = nn.Sequential(
         nn.Linear(DIM, DIM * 10),
-        nn.ReLU(),
+        nn.GELU(),
+        nn.Dropout(),
         nn.Linear(DIM * 10, DIM * 5),
-        nn.ReLU(),
-        nn.Linear(DIM * 5, 1),
+        nn.GELU(),
+        nn.Dropout(),
+        nn.Linear(DIM * 5, DIM),
+        nn.GELU(),
+        nn.Dropout(),
+        nn.Linear(DIM, 1),
     )
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
