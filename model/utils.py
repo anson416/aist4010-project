@@ -32,12 +32,7 @@ class ChannelModification(nn.Module):
         self.out_channels = out_channels
 
         self.modification = (
-            nn.Sequential(
-                LayerNorm2d(in_channels, eps=1e-6),
-                nn.Conv2d(in_channels, out_channels, kernel_size=1),
-            )
-            if in_channels != out_channels
-            else nn.Identity()
+            nn.Conv2d(in_channels, out_channels, kernel_size=1) if in_channels != out_channels else nn.Identity()
         )
 
     def forward(self, x: Tensor) -> Tensor:
