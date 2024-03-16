@@ -219,7 +219,6 @@ class AASR(nn.Module):
         if isinstance(scale, float):
             scale = (scale, scale)
 
-        assert all(map(lambda x: x >= 1.0, scale))
         assert len(x.shape) == 4
         assert x.shape[1] == self.in_channels
         assert x.shape[2] % (1 << (len(self.levels) - 1)) == 0
