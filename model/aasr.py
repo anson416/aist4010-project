@@ -92,10 +92,7 @@ class Upsampler(nn.Module):
                     ChannelModification(in_channels, out_channels),
                 )
             elif mode == "convtranspose2d":
-                self.upsampler = nn.Sequential(
-                    LayerNorm2d(in_channels, eps=1e-6),
-                    nn.ConvTranspose2d(in_channels, out_channels, kernel_size=scale, stride=scale),
-                )
+                self.upsampler = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=scale, stride=scale)
             elif mode == "pixelshuffle":
                 self.upsampler = nn.Sequential(
                     ChannelModification(in_channels, out_channels * scale**2),
