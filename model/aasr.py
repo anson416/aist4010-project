@@ -58,6 +58,7 @@ class Downsampler(nn.Module):
                 )
             elif mode == "maxpool2d":
                 self.downsampler = nn.Sequential(
+                    LayerNorm2d(in_channels, eps=1e-6),
                     nn.MaxPool2d(kernel_size=scale, stride=scale),
                     ChannelModification(in_channels, out_channels),
                 )
