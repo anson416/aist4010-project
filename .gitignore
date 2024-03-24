@@ -1,6 +1,6 @@
 # User-defined
 data/
-train/
+trained_models/
 *.gz
 *.jpg
 *.png

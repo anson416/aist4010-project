@@ -49,12 +49,13 @@ class PyTorchPipeline(object):
         epochs: int,
         train_dataloader: DataLoader,
         val_dataloader: Optional[DataLoader] = None,
+        project: str = "trained_models",
     ) -> str:
         if val_dataloader is None and self._scheduler is not None:
             assert not isinstance(self._scheduler, ReduceLROnPlateau)
 
         if self._output_dir is None:
-            self._output_dir = Path("train") / self.get_datetime()
+            self._output_dir = Path(project) / self.get_datetime()
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
         start_time = time.time()
