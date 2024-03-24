@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
 from tqdm import tqdm
 
+from loss import FFT2DLoss, MeanGradientError, MultiScaleSSIMLoss
 from model import *
 from utils.file_ops import iter_files
 from utils.lr_lambda import LRLambda
@@ -131,6 +132,39 @@ class TrainingPipeline(PyTorchPipeline):
         return np.mean(losses)
 
 
+class SRLoss(nn.Module):
+    def __init__(
+        self,
+        alpha: float = 1.0,
+        beta: float = 0.6,
+        gamma: float = 0.3,
+        mu: float = 0.1,
+    ) -> None:
+        assert alpha >= 0.0
+        assert beta >= 0.0
+        assert gamma >= 0.0
+        assert mu >= 0.0
+
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.mu = mu
+
+        self.l1_loss = nn.L1Loss()
+        self.ssim_loss = MultiScaleSSIMLoss(data_range=1.0, win_size=5)
+        self.mge = MeanGradientError(mode="mse")
+        self.fft_loss = FFT2DLoss()
+
+    def forward(self, input: Tensor, target: Tensor) -> Tensor:
+        return (
+            self.alpha * self.l1_loss(input, target)
+            + self.beta * self.ssim_loss(input, target)
+            + self.gamma * self.mge(input, target)
+            + self.mu * self.fft_loss(input, target)
+        )
+
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 rng = np.random.default_rng()
@@ -178,7 +212,7 @@ val_data = SRDataset(VAL_DIR, transform=val_y_aug)
 val_dataloader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, persistent_workers=True)
 
 model = AASR(**CONFIGS).to(device)
-criterion = nn.L1Loss()
+criterion = SRLoss()
 optimizer = torch.optim.AdamW(model.parameters(), lr=1, weight_decay=WEIGHT_DECAY)
 scheduler = torch.optim.lr_scheduler.LambdaLR(
     optimizer,
