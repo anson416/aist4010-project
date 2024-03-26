@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
 from tqdm import tqdm
 
-from loss import FFT2DLoss, MeanGradientError, MultiScaleSSIMLoss
+from loss import FFT2DLoss, MeanGradientError, MultiScaleSSIMLoss, SSIMLoss
 from model import *
 from utils.file_ops import iter_files
 from utils.lr_lambda import LRLambda
@@ -32,20 +32,20 @@ CONFIGS = {
     "stochastic_depth_prob": 0.1,
 }
 
-TRAIN_DIR = "./data/train/DIV2K"
+TRAIN_DIR = "./data/train"
 VAL_DIR = "./data/valid"
 
-BATCH_SIZE: int = 16
 EPOCHS: int = 20
+BATCH_SIZE: int = 16
 MAX_LR: float = 1e-3
-MIN_LR: float = 1e-3
+MIN_LR: float = 1e-4
 WARMUP: int = 0
 EARLY_MIN: int = 0
 WEIGHT_DECAY: float = 1e-4
 
 IMG_SIZE: int = 64
 MAX_SCALE: int = 4
-TRAIN_PCT: float = 0.05
+TRAIN_PCT: float = 0.5
 
 
 class SRDataset(Dataset):
@@ -135,9 +135,9 @@ class TrainingPipeline(PyTorchPipeline):
 class SRLoss(nn.Module):
     def __init__(
         self,
-        alpha: float = 1.0,
-        beta: float = 0.6,
-        gamma: float = 0.3,
+        alpha: float = 0.5,
+        beta: float = 0.3,
+        gamma: float = 0.1,
         mu: float = 0.1,
     ) -> None:
         assert alpha >= 0.0
@@ -152,16 +152,17 @@ class SRLoss(nn.Module):
         self.mu = mu
 
         self.l1_loss = nn.L1Loss()
-        self.ssim_loss = MultiScaleSSIMLoss(data_range=1.0, win_size=5)
-        self.mge = MeanGradientError(mode="mse")
+        # self.ssim_loss = MultiScaleSSIMLoss(data_range=1.0, win_size=3)
+        self.ssim_loss = SSIMLoss(data_range=1)
+        self.mge = MeanGradientError()
         self.fft_loss = FFT2DLoss()
 
-    def forward(self, input: Tensor, target: Tensor) -> Tensor:
+    def forward(self, pred: Tensor, target: Tensor) -> Tensor:
         return (
-            self.alpha * self.l1_loss(input, target)
-            + self.beta * self.ssim_loss(input, target)
-            + self.gamma * self.mge(input, target)
-            + self.mu * self.fft_loss(input, target)
+            self.alpha * self.l1_loss(pred, target)
+            + self.beta * self.ssim_loss(pred, target)
+            + self.gamma * self.mge(pred, target)
+            + self.mu * self.fft_loss(pred, target)
         )
 
 
