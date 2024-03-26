@@ -75,7 +75,7 @@ class Upsampler(nn.Module):
         in_channels: int,
         out_channels: int,
         scale: int,
-        mode: Literal["bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
+        mode: Literal["bicubic", "bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
@@ -86,7 +86,7 @@ class Upsampler(nn.Module):
         if scale == 1:
             self.upsampler = nn.Identity()
         else:
-            if mode == "bilinear":
+            if mode in {"bicubic", "bilinear"}:
                 self.upsampler = nn.Sequential(
                     nn.Upsample(scale_factor=scale, mode=mode),
                     ChannelModification(in_channels, out_channels),
@@ -112,7 +112,7 @@ class Collector(nn.Module):
         level: int,
         use_attention: bool = False,
         downsampler: Literal["conv2d", "maxpool2d"] = "conv2d",
-        upsampler: Literal["bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
+        upsampler: Literal["bicubic", "bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
     ) -> None:
         super().__init__()
         self.levels = levels
@@ -175,9 +175,9 @@ class AASR(nn.Module):
         n_recurrent: int = 1,
         use_channel_attention: bool = True,
         use_attention_gate: bool = True,
-        add_bilinear: bool = True,
+        concat_orig_interp: bool = True,
         downsampler: Literal["conv2d", "maxpool2d"] = "conv2d",
-        upsampler: Literal["bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
+        upsampler: Literal["bicubic", "bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
         stochastic_depth_prob: float = 0.0,
         init_weights: bool = True,
         **kwargs: Any,
@@ -192,7 +192,7 @@ class AASR(nn.Module):
         self.n_recurrent = n_recurrent
         self.use_channel_attention = use_channel_attention
         self.use_attention_gate = use_attention_gate
-        self.add_bilinear = add_bilinear
+        self.concat_orig_interp = concat_orig_interp
         self.downsampler = downsampler
         self.upsampler = upsampler
         self.stochastic_depth_prob = stochastic_depth_prob
@@ -224,11 +224,9 @@ class AASR(nn.Module):
         assert x.shape[2] % (1 << (len(self.levels) - 1)) == 0
         assert x.shape[3] % (1 << (len(self.levels) - 1)) == 0
 
-        # Instantiate a bilinear upsampler for later use
-        bilinear = (
-            nn.Upsample(scale_factor=scale, mode="bilinear")
-            if size is None
-            else nn.Upsample(size=size, mode="bilinear")
+        # Instantiate a bicubic upsampler for later use
+        bicubic = (
+            nn.Upsample(scale_factor=scale, mode="bicubic") if size is None else nn.Upsample(size=size, mode="bicubic")
         )
 
         out = self.stem(x)
@@ -253,7 +251,7 @@ class AASR(nn.Module):
                     encoded.pop()
 
         auxiliary = self.auxiliary(out)
-        out = self.output(self.concat(bilinear(x), bilinear(out))) if self.add_bilinear else self.output(bilinear(out))
+        out = self.output(self.concat(bicubic(x), bicubic(out)) if self.concat_orig_interp else bicubic(out))
 
         return out, auxiliary
 
@@ -328,7 +326,7 @@ class AASR(nn.Module):
         return nn.Sequential(
             RecurrentAttentionBlock(
                 self.block,
-                channels := self.in_channels * self.add_bilinear + self.levels[0][0],
+                channels := self.in_channels * self.concat_orig_interp + self.levels[0][0],
                 n_recurrent=self.n_recurrent,
                 use_attention=self.use_channel_attention,
                 reduction=self.reduction,
