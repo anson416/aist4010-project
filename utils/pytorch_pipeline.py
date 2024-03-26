@@ -28,6 +28,8 @@ class PyTorchPipeline(object):
         device: torch.device = torch.device("cpu"),
         save_full: bool = False,
         precision: int = 3,
+        project: str = "training",
+        name: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         self._model = model
@@ -37,6 +39,8 @@ class PyTorchPipeline(object):
         self._device = device
         self._save_full = save_full
         self._precision = precision
+        self._project = project
+        self._name = name
         self._kwargs = kwargs
         self._output_dir: Optional[Path] = None
         self._learning_rates: list[float] = []
@@ -49,14 +53,13 @@ class PyTorchPipeline(object):
         epochs: int,
         train_dataloader: DataLoader,
         val_dataloader: Optional[DataLoader] = None,
-        project: str = "trained_models",
     ) -> str:
         if val_dataloader is None and self._scheduler is not None:
             assert not isinstance(self._scheduler, ReduceLROnPlateau)
 
         if self._output_dir is None:
-            self._output_dir = Path(project) / self.get_datetime()
-        self._output_dir.mkdir(parents=True, exist_ok=True)
+            self._output_dir = Path(self._project) / (self._name or self.get_datetime())
+        self._output_dir.mkdir(parents=True, exist_ok=False)
 
         start_time = time.time()
         for epoch in range(1, epochs + 1):
