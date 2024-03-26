@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
 # File: loss/fft.py
 
-from typing import Literal
-
 import torch
-import torch.nn.functional as F
 from torch import Tensor, nn
 
 
@@ -14,18 +11,30 @@ class FFT2DLoss(nn.Module):
     [Fourier Space Losses for Efficient Perceptual Image Super-Resolution](https://arxiv.org/abs/2106.00783)
     """
 
-    def __init__(self, mode: Literal["mae", "mse"] = "mae") -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.mode = mode
 
-        self.diff = F.l1_loss if mode == "mae" else F.mse_loss
+    def forward(self, pred: Tensor, target: Tensor) -> Tensor:
+        f_pred = torch.fft.fft2(pred, norm="ortho")
+        f_target = torch.fft.fft2(target, norm="ortho")
 
-    def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        assert len(input.shape) == 4
-        assert len(target.shape) == 4
-
-        return self.diff(self.fft2d(input), self.fft2d(target))
+        return torch.mean(torch.abs(f_pred - f_target))
 
     @staticmethod
-    def fft2d(img: Tensor) -> Tensor:
-        return 20 * torch.log10(torch.fft.fftshift(torch.fft.fft2(img, norm="ortho")))
+    def visualize(img: Tensor, eps: float = 1e-6) -> None:
+        import matplotlib.pyplot as plt
+        from torchvision.transforms.v2 import Grayscale
+
+        assert 2 <= len(img.shape) <= 3
+        if len(img.shape) == 3:
+            if img.shape[0] == 3:
+                img = Grayscale()(img)
+            img = img[0]
+
+        f = torch.fft.fftshift(torch.fft.fft2(img, norm="ortho"))
+        f = 20 * torch.log10(torch.abs(f) + eps)
+        f = (f - torch.min(f)) / (torch.max(f) - torch.min(f))
+
+        plt.imshow(f, cmap="gray")
+        plt.show()
+        plt.close()
