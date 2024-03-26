@@ -145,5 +145,5 @@ class MultiScaleSSIM(torch.nn.Module):
 
 
 class MultiScaleSSIMLoss(MultiScaleSSIM):
-    def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        return 1 - super().forward(input, target)
+    def forward(self, pred: Tensor, target: Tensor) -> Tensor:
+        return 1 - super().forward(pred, target)

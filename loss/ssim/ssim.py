@@ -120,5 +120,5 @@ class SSIM(torch.nn.Module):
 
 
 class SSIMLoss(SSIM):
-    def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        return 1 - super().forward(input, target)
+    def forward(self, pred: Tensor, target: Tensor) -> Tensor:
+        return 1 - super().forward(pred, target)
