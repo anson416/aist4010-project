@@ -55,7 +55,9 @@ class PyTorchPipeline(object):
         val_dataloader: Optional[DataLoader] = None,
     ) -> str:
         if val_dataloader is None and self._scheduler is not None:
-            assert not isinstance(self._scheduler, ReduceLROnPlateau)
+            assert not isinstance(
+                self._scheduler, ReduceLROnPlateau
+            ), "If `val_dataloader` is None, then you cannot use ReduceLROnPlateau as your learning rate scheduler."
 
         if self._output_dir is None:
             self._output_dir = Path(self._project) / (self._name or self.get_datetime())
