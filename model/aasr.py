@@ -324,20 +324,36 @@ class AASR(nn.Module):
 
     def __make_output(self) -> nn.Sequential:
         return nn.Sequential(
-            RecurrentAttentionBlock(
-                self.block,
-                channels := self.in_channels * self.concat_orig_interp + self.levels[0][0],
-                n_recurrent=self.n_recurrent,
-                use_attention=self.use_channel_attention,
-                reduction=self.reduction,
-                **self.kwargs,
+            nn.GELU(),
+            nn.Conv2d(
+                self.concat_orig_interp * self.in_channels + self.levels[0][0],
+                self.levels[0][0],
+                kernel_size=3,
+                padding="same",
             ),
-            ChannelModification(channels, self.out_channels),
-            nn.Sigmoid(),
+            nn.GELU(),
+            nn.Conv2d(
+                self.levels[0][0],
+                self.out_channels,
+                kernel_size=3,
+                padding="same",
+            ),
         )
 
     def __make_auxiliary(self) -> nn.Sequential:
         return nn.Sequential(
-            ChannelModification(self.levels[0][0], self.out_channels),
-            nn.Sigmoid(),
+            nn.GELU(),
+            nn.Conv2d(
+                self.levels[0][0],
+                self.levels[0][0],
+                kernel_size=3,
+                padding="same",
+            ),
+            nn.GELU(),
+            nn.Conv2d(
+                self.levels[0][0],
+                self.out_channels,
+                kernel_size=3,
+                padding="same",
+            ),
         )
