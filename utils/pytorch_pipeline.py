@@ -65,6 +65,8 @@ class PyTorchPipeline(object):
 
         start_time = time.time()
         for epoch in range(1, epochs + 1):
+            epoch_start_time = time.time()
+
             # Retrieve learning rate for current epoch
             lr = self._optimizer.param_groups[0]["lr"]
             self._learning_rates.append(lr)
@@ -90,13 +92,16 @@ class PyTorchPipeline(object):
             # Plot training curves (losses and learning rates)
             self.plot()
 
+            epoch_end_time = time.time()
+
             # Display epoch information
             print(
                 f"{self.get_epoch_str(epoch, epochs)} -",
                 f"train_loss: {train_loss:.{self._precision}f},",
                 f"{f'val_loss: {val_loss:.{self._precision}f},' if val_loss is not None else ''}",
                 f"lr: {lr},",
-                f"ETR: {self.get_etr(epoch, epochs, time.time() - start_time)}",
+                f"epoch_time: {self.format_time_elapsed(epoch_end_time - epoch_start_time)},",
+                f"ETR: {self.get_etr(epoch, epochs, epoch_end_time - start_time)}",
                 flush=True,
             )
 
@@ -191,6 +196,20 @@ class PyTorchPipeline(object):
             plt.close()
 
     @staticmethod
+    def format_time_elapsed(time_elapsed: float) -> str:
+        assert time_elapsed >= 0
+
+        d = int(time_elapsed // 86400)
+        time_elapsed -= d * 86400
+        h = int(time_elapsed // 3600)
+        time_elapsed -= h * 3600
+        m = int(time_elapsed // 60)
+        time_elapsed -= m * 60
+        s = round(time_elapsed)
+
+        return f"{f'{d}:' if d > 0 else ''}{h:02d}:{m:02d}:{s:02d}"
+
+    @staticmethod
     def get_etr(
         progress: int,
         total: int,
@@ -202,14 +221,7 @@ class PyTorchPipeline(object):
         ), f"0 < {progress} <= {total}. `progress` must be a positive integer not greater than `total`."
 
         etr = time_elapsed * ((total / progress) - 1)
-        d = int(etr // 86400)
-        etr -= d * 86400
-        h = int(etr // 3600)
-        etr -= h * 3600
-        m = int(etr // 60)
-        etr -= m * 60
-        s = round(etr)
-        return f"{f'{d}:' if d > 0 else ''}{h:02d}:{m:02d}:{s:02d}"
+        return PyTorchPipeline.format_time_elapsed(etr)
 
     @staticmethod
     def get_datetime(sep: str = "-") -> str:
