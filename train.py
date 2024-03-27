@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
 from tqdm import tqdm
 
-from loss import FFT2DLoss, MeanGradientError, MultiScaleSSIMLoss, SSIMLoss
+from loss import FFT2DLoss, MeanGradientError, MultiScaleSSIMLoss
 from model import *
 from utils.file_ops import iter_files
 from utils.pytorch_pipeline import PyTorchPipeline
@@ -27,15 +27,30 @@ from utils.pytorch_pipeline import PyTorchPipeline
 
 def parse_args() -> Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--levels", type=str, default="BASE")
+    parser.add_argument(
+        "--levels",
+        type=str,
+        default="BASE",
+        choices=("TINY", "SMALL", "BASE", "LARGE", "XLARGE", "HUGE"),
+    )
     parser.add_argument("--block", type=str, default="ConvNeXtBlock")
     parser.add_argument("--n_recurrent", type=int, default=0)
     parser.add_argument("--use_channel_attention", action="store_true")
     parser.add_argument("--use_attention_gate", action="store_true")
     parser.add_argument("--concat_orig_interp", action="store_true")
-    parser.add_argument("--downsampler", type=str, default="conv2d")
-    parser.add_argument("--upsampler", type=str, default="pixelshuffle")
+    parser.add_argument("--downsampler", type=str, default="conv2d", choices=("conv2d", "maxpool2d"))
+    parser.add_argument(
+        "--upsampler",
+        type=str,
+        default="pixelshuffle",
+        choices=("bicubic", "bilinear", "convtranspose2d", "pixelshuffle"),
+    )
     parser.add_argument("--stochastic_depth_prob", type=float, default=0.0)
+    parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument("--beta", type=float, default=0.0)
+    parser.add_argument("--gamma", type=float, default=0.5)
+    parser.add_argument("--eta", type=float, default=0.01)
+    parser.add_argument("--mu", type=float, default=0.01)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--max_lr", type=float, default=1e-3)
@@ -87,8 +102,8 @@ class TrainingPipeline(PyTorchPipeline):
         losses = []
         for batch in tqdm(dataloader, desc=f"{self.get_epoch_str(epoch, epochs)} Training", leave=False):
             batch = batch.to(self._device)
-            scales = rng.choice(n := len(train_scales), max(int(n * args.train_pct), 1), replace=False)
-            for scale in train_scales[scales]:
+            indexes = rng.choice(n := len(train_scales), max(int(n * args.train_pct), 1), replace=False)
+            for scale in train_scales[indexes]:
                 size = (int(args.img_size * scale[0]), int(args.img_size * scale[1]))
                 y = K.RandomCrop(size, same_on_batch=False)(batch)
                 y_aux = K.Resize((args.img_size, args.img_size), resample=random.choice(self.RESAMPLES))(y)
@@ -98,7 +113,7 @@ class TrainingPipeline(PyTorchPipeline):
                 pred, aux = self._model(x, size=size)
 
                 # Loss
-                loss = self._criterion(pred, y) + self._criterion(aux, y_aux)
+                loss = self._criterion(pred, y) + 0.3 * self._criterion(aux, y_aux)
                 losses.append(loss.item())
 
                 # Backpropagation
@@ -141,37 +156,48 @@ class SRLoss(nn.Module):
     def __init__(
         self,
         alpha: float = 1.0,
-        beta: float = 0.8,
-        gamma: float = 0.1,
-        mu: float = 0.1,
+        beta: float = 0.0,
+        gamma: float = 0.5,
+        eta: float = 0.01,
+        mu: float = 0.01,
     ) -> None:
         assert alpha >= 0.0
         assert beta >= 0.0
         assert gamma >= 0.0
+        assert eta >= 0.0
         assert mu >= 0.0
+        assert alpha + beta + gamma + eta + mu > 0.0
 
         super().__init__()
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
+        self.eta = eta
         self.mu = mu
 
         self.l1_loss = nn.L1Loss()
-        # self.ssim_loss = MultiScaleSSIMLoss(data_range=1.0, win_size=3)
-        self.ssim_loss = SSIMLoss(data_range=1.0)
+        self.mse_loss = nn.MSELoss()
+        self.ssim_loss = MultiScaleSSIMLoss(data_range=1.0, win_size=3)
         self.mge = MeanGradientError()
         self.fft_loss = FFT2DLoss()
 
     def forward(self, pred: Tensor, target: Tensor) -> Tensor:
-        return (
-            self.alpha * self.l1_loss(pred, target)
-            + self.beta * self.ssim_loss(pred, target)
-            + self.gamma * self.mge(pred, target)
-            + self.mu * self.fft_loss(pred, target)
-        )
+        loss = 0
+        if self.alpha > 0.0:
+            loss += self.alpha * self.l1_loss(pred, target)
+        if self.beta > 0.0:
+            loss += self.beta * self.mse_loss(pred, target)
+        if self.gamma > 0.0:
+            loss += self.gamma * self.ssim_loss(pred, target)
+        if self.eta > 0.0:
+            loss += self.eta * self.mge(pred, target)
+        if self.mu > 0.0:
+            loss += self.mu * self.fft_loss(pred, target)
+        return loss
 
 
 args = parse_args()
+print(args)
 
 configs = {
     "levels": getattr(aasr, args.levels.upper()),
@@ -222,7 +248,6 @@ train_x_aug = K.AugmentationSequential(
     K.RandomMotionBlur(kernel_size=3, angle=180, direction=1, p=0.125),
     K.RandomGaussianNoise(p=0.25),
     K.RandomSaltAndPepperNoise(p=0.25),
-    # K.RandomJPEG(p=0.5),
     same_on_batch=False,
 )
 
@@ -244,7 +269,7 @@ val_dataloader = DataLoader(
 )
 
 model = AASR(**configs).to(device)
-criterion = SRLoss()
+criterion = SRLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma, eta=args.eta, mu=args.mu)
 optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=args.weight_decay)
 scheduler = ReduceLROnPlateau(optimizer, factor=0.1, patience=10, min_lr=args.min_lr)
 
