@@ -168,7 +168,7 @@ class Collector(nn.Module):
 class AASR(nn.Module):
     def __init__(
         self,
-        levels: Sequence[tuple[int, int]] = SMALL,
+        levels: Sequence[tuple[int, int]] = BASE,
         in_channels: int = 3,
         out_channels: int = 3,
         block: str | Type[nn.Module] = "ConvNeXtBlock",
@@ -264,7 +264,7 @@ class AASR(nn.Module):
     def initialize_weights(self) -> None:
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.trunc_normal_(m.weight, std=0.2)
+                nn.init.trunc_normal_(m.weight, std=0.02)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
