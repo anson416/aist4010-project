@@ -233,7 +233,8 @@ class AASR(nn.Module):
             nn.Upsample(scale_factor=scale, mode="bicubic") if size is None else nn.Upsample(size=size, mode="bicubic")
         )
 
-        out = self.stem(x)
+        stem = self.stem(x)
+        out = stem
 
         # Encode
         encoded: list[Tensor] = []
@@ -254,6 +255,7 @@ class AASR(nn.Module):
                     decoded.append(out)
                     encoded.pop()
 
+        out += stem
         auxiliary = self.auxiliary(out)
         out = self.output(self.concat(bicubic(x), bicubic(out)) if self.concat_orig_interp else bicubic(out))
 
