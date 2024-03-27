@@ -183,6 +183,10 @@ class AASR(nn.Module):
         **kwargs: Any,
     ) -> None:
         assert len(levels) >= 2
+        assert in_channels >= 1
+        assert out_channels >= 1
+        assert n_recurrent >= 0
+        assert 0.0 <= stochastic_depth_prob <= 1.0
 
         super().__init__()
         self.block = getattr(bottlenecks, block) if isinstance(block, str) else block
