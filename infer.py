@@ -54,8 +54,7 @@ class Upscaler(object):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         checkpoint = torch.load(model_path, map_location=self.device)
-        configs = checkpoint["configs"]
-        self.model = AASR(**configs).to(self.device)
+        self.model = AASR(**checkpoint["configs"]).to(self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.model.eval()
 
@@ -80,7 +79,7 @@ class Upscaler(object):
                 img = img.unsqueeze(0)
         elif isinstance(img, str):
             to_tensor = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)])
-            img = to_tensor(Image.open(img).convert(mode="RGB")).unsqueeze(0)
+            img: Tensor = to_tensor(Image.open(img).convert(mode="RGB")).unsqueeze(0)
         else:
             raise TypeError("Inappropriate type for either `img_tensor` or `img_path`, whichever is passed.")
 
@@ -88,14 +87,16 @@ class Upscaler(object):
 
         if size is None:
             out_h, out_w = int(h * scale[0]), int(w * scale[1])
+            scale_h, scale_w = scale
         else:
-            out_h, out_w = size[0], size[1]
+            out_h, out_w = size
+            scale_h, scale_w = out_h / h, out_w / w
 
         multiple = 1 << (len(self.model.levels) - 1)
         pad_h = multiple - rh if (rh := h % multiple) != 0 else 0
         pad_w = multiple - rw if (rw := w % multiple) != 0 else 0
         img = F.pad(img, (0, pad_w, 0, pad_h), mode="reflect").to(self.device)
-        pred, _ = self.model(img, scale=scale) if size is None else self.model(img, size=size)
+        pred, _ = self.model(img, scale=(scale_h, scale_w))
 
         return pred[:, :, :out_h, :out_w]
 
