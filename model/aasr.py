@@ -270,6 +270,7 @@ class AASR(nn.Module):
     def __make_stem(self) -> nn.Sequential:
         return nn.Sequential(
             nn.Conv2d(self.in_channels, self.levels[0][0], kernel_size=3, padding="same"),
+            LayerNorm2d(self.levels[0][0], eps=1e-6),
         )
 
     def __make_encoder(self) -> nn.ModuleList:
@@ -335,7 +336,7 @@ class AASR(nn.Module):
             nn.Conv2d(
                 self.concat_orig_interp * self.in_channels + self.levels[0][0],
                 self.levels[0][0],
-                kernel_size=3,
+                kernel_size=5,
                 padding="same",
             ),
             nn.GELU(),
@@ -345,7 +346,7 @@ class AASR(nn.Module):
     def __make_auxiliary(self) -> nn.Sequential:
         return nn.Sequential(
             nn.GELU(),
-            nn.Conv2d(self.levels[0][0], self.levels[0][0], kernel_size=3, padding="same"),
+            nn.Conv2d(self.levels[0][0], self.levels[0][0], kernel_size=5, padding="same"),
             nn.GELU(),
             nn.Conv2d(self.levels[0][0], self.out_channels, kernel_size=3, padding="same"),
         )
