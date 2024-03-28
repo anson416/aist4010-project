@@ -25,7 +25,7 @@ class PyTorchPipeline(object):
         criterion: nn.Module,
         optimizer: Optimizer,
         scheduler: Optional[LRScheduler] = None,
-        device: torch.device = torch.device("cpu"),
+        device: Optional[torch.device] = None,
         save_full: bool = False,
         precision: int = 3,
         project: str = "training",
@@ -36,7 +36,7 @@ class PyTorchPipeline(object):
         self._criterion = criterion
         self._optimizer = optimizer
         self._scheduler = scheduler
-        self._device = device
+        self._device = device or self.get_device()
         self._save_full = save_full
         self._precision = precision
         self._project = project
@@ -194,6 +194,10 @@ class PyTorchPipeline(object):
             plt.tight_layout()
             plt.savefig(self._output_dir / f"{curve.lower().replace(' ', '_')}.png", dpi=300)
             plt.close()
+
+    @staticmethod
+    def get_device() -> torch.device:
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     @staticmethod
     def format_time_elapsed(time_elapsed: float) -> str:
