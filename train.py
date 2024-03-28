@@ -6,6 +6,7 @@ import json
 import os
 import random
 from argparse import Namespace
+from math import ceil, sqrt
 from typing import Optional
 
 import kornia.augmentation as K
@@ -24,6 +25,7 @@ from tqdm import tqdm
 from loss import FFT2DLoss, MeanGradientError, MultiScaleSSIMLoss
 from model import *
 from utils.file_ops import iter_files
+from utils.num_ops import clamp, float_
 from utils.pytorch_pipeline import PyTorchPipeline
 
 
@@ -54,6 +56,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--gamma", type=float, default=0.5)
     parser.add_argument("--eta", type=float, default=0.01)
     parser.add_argument("--mu", type=float, default=0.01)
+    parser.add_argument("--aux_weight", type=float, default=0.1)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--max_lr", type=float, default=1e-4)
@@ -61,7 +64,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--img_size", type=int, default=64)
     parser.add_argument("--max_scale", type=int, default=4)
-    parser.add_argument("--train_pct", type=float, default=0.1)
+    parser.add_argument("--asym_pct", type=float, default=0.05)
     parser.add_argument("--train_dir", type=str, default="./data/train")
     parser.add_argument("--val_dir", type=str, default="./data/valid")
     parser.add_argument("--name", type=str, default=None)
@@ -105,8 +108,8 @@ class TrainingPipeline(PyTorchPipeline):
         losses = []
         for batch in tqdm(dataloader, desc=f"{self.get_epoch_str(epoch, epochs)} Training", leave=False):
             batch = batch.to(self._device)
-            indexes = rng.choice(n := len(train_scales), max(int(n * args.train_pct), 1), replace=False)
-            for scale in train_scales[indexes]:
+            indexes = rng.choice(n := len(train_asym_scales), clamp(int(n * args.asym_pct), 1, n), replace=False)
+            for scale in np.concatenate((train_sym_scales, train_asym_scales[indexes]), axis=0):
                 size = (int(args.img_size * scale[0]), int(args.img_size * scale[1]))
                 y = K.RandomCrop(size, same_on_batch=False)(batch)
                 y_aux = K.Resize((args.img_size, args.img_size), resample=random.choice(self.RESAMPLES))(y)
@@ -116,7 +119,7 @@ class TrainingPipeline(PyTorchPipeline):
                 pred, aux = self._model(x, size=size)
 
                 # Loss
-                loss = self._criterion(pred, y) + 0.3 * self._criterion(aux, y_aux)
+                loss = self._criterion(pred, y) + args.aux_weight * self._criterion(aux, y_aux)
                 losses.append(loss.item())
 
                 # Backpropagation
@@ -219,7 +222,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 rng = np.random.default_rng()
 train_scales = np.arange(1.0, args.max_scale + 0.1, 0.1)
-train_scales = np.array(np.meshgrid(train_scales, train_scales)).T.reshape(-1, 2)
+train_sym_scales = np.column_stack((train_scales, train_scales))
+train_asym_scales = np.array(np.meshgrid(train_scales, train_scales)).T.reshape(-1, 2)
+train_asym_scales = np.array(list(set(map(tuple, train_asym_scales)) - set(map(tuple, train_sym_scales))))
 val_scales = np.arange(1.0, args.max_scale + 0.3, 0.3)
 val_scales = np.array(np.meshgrid(val_scales, val_scales)).T.reshape(-1, 2)
 
@@ -275,7 +280,7 @@ val_dataloader = DataLoader(
 model = AASR(**configs).to(device)
 criterion = SRLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma, eta=args.eta, mu=args.mu)
 optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=args.weight_decay)
-scheduler = StepLR(optimizer, step_size=20, gamma=0.1)
+scheduler = StepLR(optimizer, step_size=ceil(args.epochs / 3), gamma=sqrt(float_(args.min_lr) / float_(args.max_lr)))
 
 pipeline = TrainingPipeline(
     model,
