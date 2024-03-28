@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # File: model/aasr.py
 
-# import sys
 from collections.abc import Sequence
 from typing import Any, Literal, Optional, Type
 
@@ -178,7 +177,7 @@ class AASR(nn.Module):
         concat_orig_interp: bool = True,
         downsampler: Literal["conv2d", "maxpool2d"] = "conv2d",
         upsampler: Literal["bicubic", "bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
-        stochastic_depth_prob: float = 0.0,
+        stochastic_depth_prob: float = 0.1,
         init_weights: bool = True,
         **kwargs: Any,
     ) -> None:
@@ -268,8 +267,10 @@ class AASR(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
-    def __make_stem(self) -> nn.Module:
-        return ChannelModification(self.in_channels, self.levels[0][0])
+    def __make_stem(self) -> nn.Sequential:
+        return nn.Sequential(
+            nn.Conv2d(self.in_channels, self.levels[0][0], kernel_size=3, padding="same"),
+        )
 
     def __make_encoder(self) -> nn.ModuleList:
         encoder = nn.ModuleList()
@@ -338,28 +339,13 @@ class AASR(nn.Module):
                 padding="same",
             ),
             nn.GELU(),
-            nn.Conv2d(
-                self.levels[0][0],
-                self.out_channels,
-                kernel_size=3,
-                padding="same",
-            ),
+            nn.Conv2d(self.levels[0][0], self.out_channels, kernel_size=3, padding="same"),
         )
 
     def __make_auxiliary(self) -> nn.Sequential:
         return nn.Sequential(
             nn.GELU(),
-            nn.Conv2d(
-                self.levels[0][0],
-                self.levels[0][0],
-                kernel_size=3,
-                padding="same",
-            ),
+            nn.Conv2d(self.levels[0][0], self.levels[0][0], kernel_size=3, padding="same"),
             nn.GELU(),
-            nn.Conv2d(
-                self.levels[0][0],
-                self.out_channels,
-                kernel_size=3,
-                padding="same",
-            ),
+            nn.Conv2d(self.levels[0][0], self.out_channels, kernel_size=3, padding="same"),
         )
