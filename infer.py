@@ -49,9 +49,13 @@ def parse_args() -> Namespace | Callable[[], None]:
 
 
 class Upscaler(object):
-    def __init__(self, model_path: str) -> None:
+    def __init__(
+        self,
+        model_path: str,
+        device: Optional[torch.device] = None,
+    ) -> None:
         self.model_path = model_path
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or PyTorchPipeline.get_device()
 
         checkpoint = torch.load(model_path, map_location=self.device)
         self.model = AASR(**checkpoint["configs"]).to(self.device)
@@ -97,6 +101,7 @@ class Upscaler(object):
         pad_w = multiple - rw if (rw := w % multiple) != 0 else 0
         img = F.pad(img, (0, pad_w, 0, pad_h), mode="reflect").to(self.device)
         pred, _ = self.model(img, scale=(scale_h, scale_w))
+        pred = torch.clamp(pred, min=0.0, max=1.0)
 
         return pred[:, :, :out_h, :out_w]
 
