@@ -120,12 +120,11 @@ class ChannelAttention(nn.Module):
         self.channels = channels
         self.reduction = reduction
 
-        reduced = channels // reduction
         self.attention = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(channels, reduced, kernel_size=1),
+            nn.Conv2d(channels, channels // reduction, kernel_size=1),
             nn.GELU(),
-            nn.Conv2d(reduced, channels, kernel_size=1),
+            nn.Conv2d(channels // reduction, channels, kernel_size=1),
             nn.Sigmoid(),
         )
 
