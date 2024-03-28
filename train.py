@@ -2,6 +2,8 @@
 # File: train.py
 
 import argparse
+import json
+import os
 import random
 from argparse import Namespace
 from typing import Optional
@@ -14,7 +16,7 @@ from kornia.constants import Resample
 from numpy import floating
 from PIL import Image
 from torch import Tensor, nn
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
 from tqdm import tqdm
@@ -46,6 +48,7 @@ def parse_args() -> Namespace:
         choices=("bicubic", "bilinear", "convtranspose2d", "pixelshuffle"),
     )
     parser.add_argument("--stochastic_depth_prob", type=float, default=0.0)
+    parser.add_argument("--init_weights", action="store_true")
     parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--beta", type=float, default=0.0)
     parser.add_argument("--gamma", type=float, default=0.5)
@@ -53,7 +56,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--mu", type=float, default=0.01)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--max_lr", type=float, default=1e-3)
+    parser.add_argument("--max_lr", type=float, default=1e-4)
     parser.add_argument("--min_lr", type=float, default=1e-6)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--img_size", type=int, default=64)
@@ -209,6 +212,7 @@ configs = {
     "downsampler": args.downsampler,
     "upsampler": args.upsampler,
     "stochastic_depth_prob": args.stochastic_depth_prob,
+    "init_weights": args.init_weights,
 }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -271,7 +275,7 @@ val_dataloader = DataLoader(
 model = AASR(**configs).to(device)
 criterion = SRLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma, eta=args.eta, mu=args.mu)
 optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=args.weight_decay)
-scheduler = ReduceLROnPlateau(optimizer, factor=0.1, patience=10, min_lr=args.min_lr)
+scheduler = StepLR(optimizer, step_size=20, gamma=0.1)
 
 pipeline = TrainingPipeline(
     model,
@@ -279,7 +283,10 @@ pipeline = TrainingPipeline(
     optimizer,
     scheduler=scheduler,
     device=device,
-    configs=configs,
     name=args.name,
+    configs=configs,
 )
-pipeline.start(args.epochs, train_dataloader, val_dataloader=val_dataloader)
+output_dir = pipeline.start(args.epochs, train_dataloader, val_dataloader=val_dataloader)
+
+with open(os.path.join(output_dir, "args.json"), "w") as f:
+    json.dump(vars(args), f, indent=2)
