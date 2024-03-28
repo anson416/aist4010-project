@@ -65,6 +65,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--img_size", type=int, default=64)
     parser.add_argument("--max_scale", type=int, default=4)
     parser.add_argument("--asym_pct", type=float, default=0.05)
+    parser.add_argument("--n_workers", type=int, default=8)
     parser.add_argument("--train_dir", type=str, default="./data/train")
     parser.add_argument("--val_dir", type=str, default="./data/valid")
     parser.add_argument("--name", type=str, default=None)
@@ -265,7 +266,7 @@ train_dataloader = DataLoader(
     train_data,
     batch_size=args.batch_size,
     shuffle=True,
-    num_workers=8,
+    num_workers=args.n_workers,
     persistent_workers=True,
 )
 val_data = SRDataset(args.val_dir, transform=val_y_aug)
@@ -273,7 +274,7 @@ val_dataloader = DataLoader(
     val_data,
     batch_size=args.batch_size,
     shuffle=True,
-    num_workers=8,
+    num_workers=args.n_workers,
     persistent_workers=True,
 )
 
