@@ -25,7 +25,7 @@ from tqdm import tqdm
 from loss import FFT2DLoss, MeanGradientError, MultiScaleSSIMLoss
 from model import *
 from utils.file_ops import iter_files
-from utils.num_ops import clamp, float_
+from utils.num_ops import clamp
 from utils.pytorch_pipeline import PyTorchPipeline
 
 
@@ -280,7 +280,7 @@ val_dataloader = DataLoader(
 model = AASR(**configs).to(device)
 criterion = SRLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma, eta=args.eta, mu=args.mu)
 optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=args.weight_decay)
-scheduler = StepLR(optimizer, step_size=ceil(args.epochs / 3), gamma=sqrt(float_(args.min_lr) / float_(args.max_lr)))
+scheduler = StepLR(optimizer, step_size=ceil(args.epochs / 3), gamma=sqrt(args.min_lr / args.max_lr))
 
 pipeline = TrainingPipeline(
     model,

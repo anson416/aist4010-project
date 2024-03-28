@@ -1,12 +1,6 @@
 # -*- coding: utf-8 -*-
 # File: utils/num_ops.py
 
-from decimal import Decimal
-
-
-def float_(x: float) -> Decimal:
-    return Decimal(str(x))
-
 
 def clamp(num: float, a: float, b: float) -> float:
     """
