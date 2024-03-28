@@ -15,7 +15,6 @@ class ResNetBlockV2(nn.Module):
     used indirectly by `utils.RecurrentAttentionBlock()`.
 
     Reference: [Identity Mappings in Deep Residual Networks](https://arxiv.org/abs/1603.05027)
-
     Source: https://github.com/pytorch/vision/blob/main/torchvision/models/resnet.py
     """
 
@@ -53,7 +52,6 @@ class ConvNeXtBlock(nn.Module):
     used indirectly by `utils.RecurrentAttentionBlock()`.
 
     Reference: [A ConvNet for the 2020s](https://arxiv.org/abs/2201.03545)
-
     Source: https://github.com/pytorch/vision/blob/main/torchvision/models/convnext.py
     """
 
@@ -90,7 +88,6 @@ class ConvNeXtBlockV2(nn.Module):
     used indirectly by `utils.RecurrentAttentionBlock()`.
 
     Reference: [ConvNeXt V2: Co-designing and Scaling ConvNets with Masked Autoencoders](https://arxiv.org/abs/2301.00808)
-
     Source: https://github.com/facebookresearch/ConvNeXt-V2/blob/main/models/utils.py
     """
 

@@ -13,6 +13,7 @@ from .utils import (
     Concatenation,
     LayerNorm2d,
     RecurrentAttentionBlock,
+    ScaleAwareAdaption,
 )
 
 __all__ = [
@@ -219,6 +220,8 @@ class AASR(nn.Module):
         size: Optional[int | tuple[int, int]] = None,
         scale: float | tuple[float, float] = 1.0,
     ) -> tuple[Tensor, Tensor]:
+        if isinstance(size, int):
+            size = (size, size)
         if isinstance(scale, float):
             scale = (scale, scale)
 
@@ -226,6 +229,9 @@ class AASR(nn.Module):
         assert x.shape[1] == self.in_channels
         assert x.shape[2] % (1 << (len(self.levels) - 1)) == 0
         assert x.shape[3] % (1 << (len(self.levels) - 1)) == 0
+
+        scale_h = scale[0] if size is None else size[0] / x.shape[2]
+        scale_w = scale[1] if size is None else size[1] / x.shape[3]
 
         # Instantiate a bicubic upsampler for later use
         bicubic = (
@@ -238,9 +244,9 @@ class AASR(nn.Module):
         # Encode
         encoded: list[Tensor] = []
         for encoder in self.encoder:
-            for i, enc in enumerate(encoder):  # `i` should be at most 1
-                out = enc(out)
-                if i == 0:
+            for i, enc in enumerate(encoder):  # `i` should be at most 2
+                out = enc(out, scale_h, scale_w) if i == 1 else enc(out)
+                if i == 1:
                     encoded.append(out)
 
         # Decode
@@ -278,7 +284,7 @@ class AASR(nn.Module):
 
         total_blocks = sum(lvl[1] for lvl in self.levels)
         block_id = 1
-        for idx, (channels, n_blocks) in enumerate(self.levels):
+        for idx, (channels, n_blocks) in enumerate(self.levels):  # Each level
             blocks: list[nn.Module] = []
             for _ in range(n_blocks):
                 blocks.append(
@@ -293,7 +299,10 @@ class AASR(nn.Module):
                     )
                 )
                 block_id += 1
-            level = nn.ModuleList([nn.Sequential(*blocks)])  # Only one element at the last level
+
+            level = nn.ModuleList()  # Only two elements at the last level
+            level.append(nn.Sequential(*blocks))
+            level.append(ScaleAwareAdaption(channels))
 
             # Downsample
             if idx != len(self.levels) - 1:  # Except the last level
@@ -336,7 +345,7 @@ class AASR(nn.Module):
             nn.Conv2d(
                 self.concat_orig_interp * self.in_channels + self.levels[0][0],
                 self.levels[0][0],
-                kernel_size=5,
+                kernel_size=3,
                 padding="same",
             ),
             nn.GELU(),
@@ -346,7 +355,7 @@ class AASR(nn.Module):
     def __make_auxiliary(self) -> nn.Sequential:
         return nn.Sequential(
             nn.GELU(),
-            nn.Conv2d(self.levels[0][0], self.levels[0][0], kernel_size=5, padding="same"),
+            nn.Conv2d(self.levels[0][0], self.levels[0][0], kernel_size=3, padding="same"),
             nn.GELU(),
             nn.Conv2d(self.levels[0][0], self.out_channels, kernel_size=3, padding="same"),
         )

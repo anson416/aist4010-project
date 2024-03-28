@@ -51,7 +51,6 @@ class Concatenation(nn.Module):
 class RecurrentAttentionBlock(nn.Module):
     """
     Reference: [Recurrent Residual Convolutional Neural Network based on U-Net (R2U-Net) for Medical Image Segmentation](https://arxiv.org/abs/1802.06955)
-
     Source: https://github.com/navamikairanda/R2U-Net/blob/main/r2unet.py
     """
 
@@ -89,7 +88,6 @@ class RecurrentAttentionBlock(nn.Module):
 class GRN(nn.Module):
     """
     Reference: [ConvNeXt V2: Co-designing and Scaling ConvNets with Masked Autoencoders](https://arxiv.org/abs/2301.00808)
-
     Source: https://github.com/facebookresearch/ConvNeXt-V2/blob/main/models/utils.py
     """
 
@@ -107,7 +105,6 @@ class GRN(nn.Module):
 class ChannelAttention(nn.Module):
     """
     Reference: [Image Super-Resolution Using Very Deep Residual Channel Attention Networks](https://arxiv.org/abs/1807.02758)
-
     Source: https://github.com/yulunzhang/RCAN/blob/master/RCAN_TrainCode/code/model/rcan.py
     """
 
@@ -135,7 +132,6 @@ class ChannelAttention(nn.Module):
 class AttentionGate(nn.Module):
     """
     Reference: [Attention U-Net: Learning Where to Look for the Pancreas](https://arxiv.org/abs/1804.03999)
-
     Source: https://github.com/LeeJunHyun/Image_Segmentation/blob/master/network.py
     """
 
@@ -158,3 +154,54 @@ class AttentionGate(nn.Module):
         assert g.shape[1] == self.channels
 
         return x * self.attention(x + g)
+
+
+class ScaleAwareAdaption(nn.Module):
+    """
+    Reference: [Learning A Single Network for Scale-Arbitrary Super-Resolution](https://arxiv.org/abs/2004.03791)
+    Source: hhttps://github.com/The-Learning-And-Vision-Atelier-LAVA/ArbSR/blob/master/model/arbrcan.py
+    """
+
+    def __init__(
+        self,
+        channels: int,
+        kernel_size: int = 3,
+        n_experts: int = 4,
+    ) -> None:
+        super().__init__()
+        self.channels = channels
+        self.kernel_size = kernel_size
+        self.n_experts = n_experts
+
+        self.routing = nn.Sequential(
+            nn.Linear(2, n_experts * 4),
+            nn.GELU(),
+            nn.Linear(n_experts * 4, n_experts),
+            nn.Softmax(dim=1),
+        )
+        self.weight_pool = nn.Parameter(Tensor(n_experts, channels, 1, kernel_size, kernel_size))
+        nn.init.trunc_normal_(self.weight_pool, std=0.02)
+        self.bias_pool = nn.Parameter(Tensor(n_experts, channels))
+        nn.init.constant_(self.bias_pool, 0)
+
+        self.mask = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=kernel_size, padding="same"),
+            nn.GELU(),
+            nn.Conv2d(channels, 1, kernel_size=kernel_size, padding="same"),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: Tensor, scale_h: float, scale_w: float) -> Tensor:
+        scale_h = torch.ones(1, 1).to(x.device) / scale_h
+        scale_w = torch.ones(1, 1).to(x.device) / scale_w
+
+        routing_weights = self.routing(torch.cat((scale_h, scale_w), 1)).view(self.n_experts, 1, 1)
+
+        fused_weight = (self.weight_pool.view(self.n_experts, -1, 1) * routing_weights).sum(0)
+        fused_weight = fused_weight.view(-1, 1, self.kernel_size, self.kernel_size)
+        fused_bias = (self.bias_pool.view(self.n_experts, -1, 1) * routing_weights).sum(0)
+        fused_bias = fused_bias.view(-1)
+
+        adapted = F.conv2d(x, fused_weight, fused_bias, padding="same", groups=self.channels)
+
+        return x + adapted * self.mask(x)
