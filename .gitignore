@@ -1,7 +1,6 @@
 # User-defined
 data/
-Flickr2K/
-trained_models/
+training/
 *.gz
 *.jpg
 *.png
