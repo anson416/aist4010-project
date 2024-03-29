@@ -26,8 +26,9 @@ __all__ = [
     "HUGE",
 ]
 
-TINY = ((16, 3), (32, 3))  # ~53K parameters
-SMALL = ((32, 6), (64, 12), (128, 6))  # ~1.6M parameters
+MOBILE = ((16, 3), (32, 3))  # ~53K parameters
+TINY = ((32, 6), (64, 12), (128, 6))  # ~1.6M parameters
+SMALL = ((64, 3), (128, 3), (256, 9), (512, 3))  # ~18M parameters
 BASE = ((64, 9), (128, 9), (256, 27), (512, 9))  # ~43M parameters
 LARGE = ((96, 9), (192, 9), (384, 27), (768, 9))  # ~95M parameters
 XLARGE = ((96, 15), (192, 15), (384, 45), (768, 15))  # ~149M parameters
