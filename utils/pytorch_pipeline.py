@@ -105,6 +105,8 @@ class PyTorchPipeline(object):
                 flush=True,
             )
 
+        print(f"Total time: {self.format_time_elapsed(time.time() - start_time)}")
+
         return str(self._output_dir)
 
     def train(
