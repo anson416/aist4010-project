@@ -362,7 +362,6 @@ class AASR(nn.Module):
 
     def __make_output(self) -> nn.ModuleList:
         channels = self.concat_orig_interp * self.in_channels + self.levels[0][0]
-        print(channels)
         return nn.ModuleList(
             [
                 (
