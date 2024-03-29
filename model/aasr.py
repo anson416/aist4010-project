@@ -152,7 +152,7 @@ class Collector(nn.Module):
         )
         if attention:
             self.conv = ChannelModification((level + 1) * channels, channels)
-            self.attention = AttentionGate(channels)
+            self.attention_gate = AttentionGate(channels)
         self.collector = ChannelModification((len(levels) - level * attention) * channels, channels)
 
     def forward(self, encoded: list[Tensor], decoded: list[Tensor]) -> Tensor:
@@ -162,7 +162,7 @@ class Collector(nn.Module):
         encoded = [self.from_encoder[i](encoded[i]) for i in range(len(encoded))]
         decoded = [self.from_decoder[i](decoded[i]) for i in range(len(decoded))]
         if self.attention:
-            gated = self.attention(self.conv(self.concat(*encoded)), decoded[-1])
+            gated = self.attention_gate(self.conv(self.concat(*encoded)), decoded[-1])
             out = self.collector(self.concat(gated, *decoded))
         else:
             out = self.collector(self.concat(*encoded, *decoded))
