@@ -26,12 +26,12 @@ __all__ = [
     "HUGE",
 ]
 
-TINY = ((16, 2), (32, 2))  # ~39K parameters
-SMALL = ((32, 4), (64, 6), (128, 4))  # ~1M parameters
-BASE = ((64, 3), (128, 3), (256, 9), (512, 3))  # ~18M parameters
-LARGE = ((64, 3), (128, 3), (256, 27), (512, 3))  # ~28M parameters
-XLARGE = ((96, 3), (192, 3), (384, 9), (768, 3))  # ~41M parameters
-HUGE = ((96, 3), (192, 3), (384, 9), (768, 27), (1536, 3))  # ~308M parameters
+TINY = ((16, 3), (32, 3))  # ~53K parameters
+SMALL = ((32, 6), (64, 12), (128, 6))  # ~1.6M parameters
+BASE = ((64, 9), (128, 9), (256, 27), (512, 9))  # ~43M parameters
+LARGE = ((96, 9), (192, 9), (384, 27), (768, 9))  # ~95M parameters
+XLARGE = ((96, 15), (192, 15), (384, 45), (768, 15))  # ~149M parameters
+HUGE = ((96, 12), (192, 12), (384, 24), (768, 36), (1536, 12))  # ~548M parameters
 
 
 class Downsampler(nn.Module):
@@ -312,7 +312,7 @@ class AASR(nn.Module):
                         channels,
                         n_recurrent=self.n_recurrent,
                         attention=self.channel_attention,
-                        scale_aware=True if self.scale_aware and i % 2 == 0 else False,
+                        scale_aware=True if self.scale_aware and i % 3 == 0 else False,
                         stochastic_depth_prob=self.stochastic_depth_prob * block_id / total_blocks,
                         reduction=self.reduction,
                         n_experts=self.n_experts,
