@@ -112,7 +112,7 @@ class TrainingPipeline(PyTorchPipeline):
         losses = []
         for batch in tqdm(dataloader, desc=f"{self.get_epoch_str(epoch, epochs)} Training", leave=False):
             batch = batch.to(self._device)
-            indexes = rng.choice(n := len(train_asym_scales), clamp(int(n * args.asym_pct), 1, n), replace=False)
+            indexes = rng.choice(n := len(train_asym_scales), clamp(int(n * args.asym_pct), 0, n), replace=False)
             for scale in np.concatenate((train_sym_scales, train_asym_scales[indexes]), axis=0):
                 size = (int(args.img_size * scale[0]), int(args.img_size * scale[1]))
                 y = K.RandomCrop(size, same_on_batch=False)(batch)
