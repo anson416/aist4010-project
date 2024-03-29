@@ -18,6 +18,7 @@ from .utils import (
 
 __all__ = [
     "AASR",
+    "MOBILE",
     "TINY",
     "SMALL",
     "BASE",
