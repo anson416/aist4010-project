@@ -92,7 +92,10 @@ class Upsampler(nn.Module):
                     ChannelModification(in_channels, out_channels),
                 )
             elif mode == "convtranspose2d":
-                self.upsampler = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=scale, stride=scale)
+                self.upsampler = nn.Sequential(
+                    nn.ConvTranspose2d(in_channels, out_channels, kernel_size=scale, stride=scale),
+                    nn.GELU(),
+                )
             elif mode == "pixelshuffle":
                 self.upsampler = nn.Sequential(
                     ChannelModification(in_channels, out_channels * scale**2),
@@ -110,14 +113,14 @@ class Collector(nn.Module):
         self,
         levels: Sequence[tuple[int, int]],
         level: int,
-        use_attention: bool = False,
+        attention: bool = False,
         downsampler: Literal["conv2d", "maxpool2d"] = "conv2d",
         upsampler: Literal["bicubic", "bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
     ) -> None:
         super().__init__()
         self.levels = levels
         self.level = level
-        self.use_attention = use_attention
+        self.attention = attention
         self.downsampler = downsampler
         self.upsampler = upsampler
 
@@ -145,10 +148,10 @@ class Collector(nn.Module):
                 for i in range(len(levels) - 1, level, -1)
             ]
         )
-        if use_attention:
+        if attention:
             self.conv = ChannelModification((level + 1) * channels, channels)
             self.attention = AttentionGate(channels)
-        self.collector = ChannelModification((len(levels) - level * use_attention) * channels, channels)
+        self.collector = ChannelModification((len(levels) - level * attention) * channels, channels)
 
     def forward(self, encoded: list[Tensor], decoded: list[Tensor]) -> Tensor:
         assert len(encoded) == len(self.from_encoder)
@@ -156,7 +159,7 @@ class Collector(nn.Module):
 
         encoded = [self.from_encoder[i](encoded[i]) for i in range(len(encoded))]
         decoded = [self.from_decoder[i](decoded[i]) for i in range(len(decoded))]
-        if self.use_attention:
+        if self.attention:
             gated = self.attention(self.conv(self.concat(*encoded)), decoded[-1])
             out = self.collector(self.concat(gated, *decoded))
         else:
@@ -173,8 +176,9 @@ class AASR(nn.Module):
         out_channels: int = 3,
         block: str | Type[nn.Module] = "ConvNeXtBlock",
         n_recurrent: int = 1,
-        use_channel_attention: bool = True,
-        use_attention_gate: bool = True,
+        channel_attention: bool = True,
+        scale_aware: bool = True,
+        attention_gate: bool = True,
         concat_orig_interp: bool = True,
         downsampler: Literal["conv2d", "maxpool2d"] = "conv2d",
         upsampler: Literal["bicubic", "bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
@@ -194,14 +198,16 @@ class AASR(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.n_recurrent = n_recurrent
-        self.use_channel_attention = use_channel_attention
-        self.use_attention_gate = use_attention_gate
+        self.channel_attention = channel_attention
+        self.scale_aware = scale_aware
+        self.attention_gate = attention_gate
         self.concat_orig_interp = concat_orig_interp
         self.downsampler = downsampler
         self.upsampler = upsampler
         self.stochastic_depth_prob = stochastic_depth_prob
         self.init_weights = init_weights
         self.reduction: int = kwargs.pop("reduction", 16)
+        self.n_experts: int = kwargs.pop("n_experts", 4)
         self.kwargs = kwargs
 
         self.concat = Concatenation(dim=1)
@@ -243,10 +249,16 @@ class AASR(nn.Module):
 
         # Encode
         encoded: list[Tensor] = []
-        for encoder in self.encoder:
-            for i, enc in enumerate(encoder):  # `i` should be at most 2
-                out = enc(out, scale_h, scale_w) if i == 1 else enc(out)
-                if i == 1:
+        for idx, encoder in enumerate(self.encoder):
+            for i, enc in enumerate(encoder):
+                if idx != len(self.encoder) - 1 and i == len(encoder) - 1:
+                    out = enc(out)
+                else:
+                    out = enc(out, scale_h, scale_w)
+
+                if (idx != len(self.encoder) - 1 and i == len(encoder) - 2) or (
+                    idx == len(self.encoder) - 1 and i == len(encoder) - 1
+                ):
                     encoded.append(out)
 
         # Decode
@@ -260,9 +272,16 @@ class AASR(nn.Module):
                     decoded.append(out)
                     encoded.pop()
 
+        # Residual connection
         out += stem
+
+        # Auxiliary output
         auxiliary = self.auxiliary(out)
-        out = self.output(self.concat(bicubic(x), bicubic(out)) if self.concat_orig_interp else bicubic(out))
+
+        # Primary output
+        out = self.concat(bicubic(x), bicubic(out)) if self.concat_orig_interp else bicubic(out)
+        for idx, module in enumerate(self.output):
+            out = module(out, scale_h, scale_w) if idx == 0 else module(out)
 
         return out, auxiliary
 
@@ -285,24 +304,22 @@ class AASR(nn.Module):
         total_blocks = sum(lvl[1] for lvl in self.levels)
         block_id = 1
         for idx, (channels, n_blocks) in enumerate(self.levels):  # Each level
-            blocks: list[nn.Module] = []
-            for _ in range(n_blocks):
-                blocks.append(
+            level = nn.ModuleList()
+            for i in range(1, n_blocks + 1):
+                level.append(
                     RecurrentAttentionBlock(
                         self.block,
                         channels,
                         n_recurrent=self.n_recurrent,
-                        use_attention=self.use_channel_attention,
-                        reduction=self.reduction,
+                        attention=self.channel_attention,
+                        scale_aware=True if self.scale_aware and i % 2 == 0 else False,
                         stochastic_depth_prob=self.stochastic_depth_prob * block_id / total_blocks,
+                        reduction=self.reduction,
+                        n_experts=self.n_experts,
                         **self.kwargs,
                     )
                 )
                 block_id += 1
-
-            level = nn.ModuleList()  # Only two elements at the last level
-            level.append(nn.Sequential(*blocks))
-            level.append(ScaleAwareAdaption(channels))
 
             # Downsample
             if idx != len(self.levels) - 1:  # Except the last level
@@ -321,7 +338,7 @@ class AASR(nn.Module):
                     Collector(
                         self.levels,
                         len(self.levels) - idx,
-                        use_attention=self.use_attention_gate,
+                        attention=self.attention_gate,
                         downsampler=self.downsampler,
                         upsampler=self.upsampler,
                     ),
@@ -329,7 +346,7 @@ class AASR(nn.Module):
                         self.block,
                         channels,
                         n_recurrent=self.n_recurrent,
-                        use_attention=self.use_channel_attention,
+                        attention=self.channel_attention,
                         reduction=self.reduction,
                         **self.kwargs,
                     ),
@@ -339,23 +356,19 @@ class AASR(nn.Module):
 
         return decoder
 
-    def __make_output(self) -> nn.Sequential:
-        return nn.Sequential(
-            nn.GELU(),
-            nn.Conv2d(
-                self.concat_orig_interp * self.in_channels + self.levels[0][0],
-                self.levels[0][0],
-                kernel_size=3,
-                padding="same",
-            ),
-            nn.GELU(),
-            nn.Conv2d(self.levels[0][0], self.out_channels, kernel_size=3, padding="same"),
+    def __make_output(self) -> nn.ModuleList:
+        return nn.ModuleList(
+            [
+                ScaleAwareAdaption(
+                    channels := self.concat_orig_interp * self.in_channels + self.levels[0][0],
+                    n_experts=self.n_experts,
+                ),
+                nn.GELU(),
+                nn.Conv2d(channels, self.out_channels, kernel_size=3, padding="same"),
+            ]
         )
 
     def __make_auxiliary(self) -> nn.Sequential:
         return nn.Sequential(
-            nn.GELU(),
-            nn.Conv2d(self.levels[0][0], self.levels[0][0], kernel_size=3, padding="same"),
-            nn.GELU(),
             nn.Conv2d(self.levels[0][0], self.out_channels, kernel_size=3, padding="same"),
         )
