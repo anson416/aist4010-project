@@ -158,7 +158,9 @@ class TrainingPipeline(PyTorchPipeline):
                 pred, aux = self._model(x, size=size)
 
                 # Loss
-                loss = self._criterion(pred, y) + self._criterion(aux, y_aux)
+                loss = self._criterion(pred, y)
+                if args.aux_weight > 0:
+                    loss += args.aux_weight * self._criterion(aux, y_aux)
                 losses.append(loss.item())
 
         return np.mean(losses)
