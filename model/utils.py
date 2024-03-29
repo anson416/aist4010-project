@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # File: model/utils.py
 
-from typing import Any, Type
+from typing import Any, Optional, Type
 
 import torch
 from torch import Tensor, nn
@@ -48,60 +48,6 @@ class Concatenation(nn.Module):
         return torch.cat(inputs, dim=self.dim)
 
 
-class RecurrentAttentionBlock(nn.Module):
-    """
-    Reference: [Recurrent Residual Convolutional Neural Network based on U-Net (R2U-Net) for Medical Image Segmentation](https://arxiv.org/abs/1802.06955)
-    Source: https://github.com/navamikairanda/R2U-Net/blob/main/r2unet.py
-    """
-
-    def __init__(
-        self,
-        block: Type[nn.Module],
-        channels: int,
-        n_recurrent: int = 0,
-        use_attention: bool = False,
-        stochastic_depth_prob: float = 0.0,
-        reduction: int = 16,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__()
-        self.block = block
-        self.channels = channels
-        self.n_recurrent = n_recurrent
-        self.use_attention = use_attention
-        self.stochastic_depth_prob = stochastic_depth_prob
-        self.reduction = reduction
-
-        self.bottleneck = block(channels, **kwargs)
-        self.channel_attention = ChannelAttention(channels, reduction=reduction) if use_attention else nn.Identity()
-        self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row")
-
-    def forward(self, x: Tensor) -> Tensor:
-        out = self.bottleneck(x)
-        for _ in range(self.n_recurrent):
-            out = self.bottleneck(x + out)
-        out = self.channel_attention(out)
-        return x + self.stochastic_depth(out)
-
-
-# Global Response Normalization
-class GRN(nn.Module):
-    """
-    Reference: [ConvNeXt V2: Co-designing and Scaling ConvNets with Masked Autoencoders](https://arxiv.org/abs/2301.00808)
-    Source: https://github.com/facebookresearch/ConvNeXt-V2/blob/main/models/utils.py
-    """
-
-    def __init__(self, channels: int) -> None:
-        super().__init__()
-        self.gamma = nn.Parameter(torch.zeros(1, channels, 1, 1))
-        self.beta = nn.Parameter(torch.zeros(1, channels, 1, 1))
-
-    def forward(self, x: Tensor) -> Tensor:
-        Gx = x.norm(p=2, dim=(2, 3), keepdim=True)
-        Nx = Gx / (Gx.mean(dim=1, keepdim=True) + 1e-6)
-        return self.gamma * (x * Nx) + self.beta + x
-
-
 class ChannelAttention(nn.Module):
     """
     Reference: [Image Super-Resolution Using Very Deep Residual Channel Attention Networks](https://arxiv.org/abs/1807.02758)
@@ -129,6 +75,136 @@ class ChannelAttention(nn.Module):
         return x * self.attention(x)
 
 
+class ScaleAwareAdaption(nn.Module):
+    """
+    Reference: [Learning A Single Network for Scale-Arbitrary Super-Resolution](https://arxiv.org/abs/2004.03791)
+    Source: hhttps://github.com/The-Learning-And-Vision-Atelier-LAVA/ArbSR/blob/master/model/arbrcan.py
+    """
+
+    def __init__(
+        self,
+        channels: int,
+        kernel_size: int = 3,
+        n_experts: int = 4,
+        dropout: float = 0.5,
+    ) -> None:
+        assert n_experts >= 1
+
+        super().__init__()
+        self.channels = channels
+        self.kernel_size = kernel_size
+        self.n_experts = n_experts
+
+        self.routing = nn.Sequential(
+            nn.Linear(2, n_experts * 4),
+            nn.GELU(),
+            nn.Dropout(p=dropout),
+            nn.Linear(n_experts * 4, n_experts),
+            nn.Softmax(dim=1),
+        )
+        self.mask = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=kernel_size, padding="same", groups=channels),
+            nn.GELU(),
+            nn.Conv2d(channels, 1, kernel_size=kernel_size, padding="same"),
+            nn.Sigmoid(),
+        )
+        self.weight_pool = nn.Parameter(Tensor(n_experts, channels, 1, kernel_size, kernel_size))
+        nn.init.trunc_normal_(self.weight_pool, std=0.02)
+        self.bias_pool = nn.Parameter(Tensor(n_experts, channels))
+        nn.init.constant_(self.bias_pool, 0)
+
+    def forward(self, x: Tensor, scale_h: float, scale_w: float) -> Tensor:
+        scale_h = torch.ones(1, 1).to(x.device) / scale_h
+        scale_w = torch.ones(1, 1).to(x.device) / scale_w
+
+        routing_weights = self.routing(torch.cat((scale_h, scale_w), 1)).view(self.n_experts, 1, 1)
+
+        fused_weight = (self.weight_pool.view(self.n_experts, -1, 1) * routing_weights).sum(0)
+        fused_weight = fused_weight.view(-1, 1, self.kernel_size, self.kernel_size)
+        fused_bias = (self.bias_pool.view(self.n_experts, -1, 1) * routing_weights).sum(0)
+        fused_bias = fused_bias.view(-1)
+
+        adapted = F.conv2d(x, fused_weight, fused_bias, padding="same", groups=self.channels)
+
+        return x + adapted * self.mask(x)
+
+
+class RecurrentAttentionBlock(nn.Module):
+    """
+    Reference: [Recurrent Residual Convolutional Neural Network based on U-Net (R2U-Net) for Medical Image Segmentation](https://arxiv.org/abs/1802.06955)
+    Source: https://github.com/navamikairanda/R2U-Net/blob/main/r2unet.py
+    """
+
+    def __init__(
+        self,
+        block: Type[nn.Module],
+        channels: int,
+        n_recurrent: int = 0,
+        attention: bool = False,
+        scale_aware: bool = False,
+        stochastic_depth_prob: float = 0.0,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__()
+        self.block = block
+        self.channels = channels
+        self.n_recurrent = n_recurrent
+        self.attention = attention
+        self.scale_aware = scale_aware
+        self.stochastic_depth_prob = stochastic_depth_prob
+        self.reduction: int = kwargs.pop("reduction", 16)
+        self.n_experts: int = kwargs.pop("n_experts", 4)
+
+        self.bottleneck = block(channels, **kwargs)
+        if attention:
+            self.channel_attention = ChannelAttention(channels, reduction=self.reduction)
+        if scale_aware:
+            self.scale_aware_adaption = ScaleAwareAdaption(channels, n_experts=self.n_experts)
+        self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row")
+
+    def forward(
+        self,
+        x: Tensor,
+        scale_h: Optional[float] = None,
+        scale_w: Optional[float] = None,
+    ) -> Tensor:
+        if self.scale_aware:
+            assert scale_h is not None and scale_w is not None
+
+        out = self.bottleneck(x)
+
+        for _ in range(self.n_recurrent):
+            out = self.bottleneck(x + out)
+
+        if self.attention:
+            out = self.channel_attention(out)
+
+        out = x + self.stochastic_depth(out)
+
+        if self.scale_aware:
+            out = self.scale_aware_adaption(out, scale_h, scale_w)
+
+        return out
+
+
+# Global Response Normalization
+class GRN(nn.Module):
+    """
+    Reference: [ConvNeXt V2: Co-designing and Scaling ConvNets with Masked Autoencoders](https://arxiv.org/abs/2301.00808)
+    Source: https://github.com/facebookresearch/ConvNeXt-V2/blob/main/models/utils.py
+    """
+
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        self.gamma = nn.Parameter(torch.zeros(1, channels, 1, 1))
+        self.beta = nn.Parameter(torch.zeros(1, channels, 1, 1))
+
+    def forward(self, x: Tensor) -> Tensor:
+        Gx = x.norm(p=2, dim=(2, 3), keepdim=True)
+        Nx = Gx / (Gx.mean(dim=1, keepdim=True) + 1e-6)
+        return self.gamma * (x * Nx) + self.beta + x
+
+
 class AttentionGate(nn.Module):
     """
     Reference: [Attention U-Net: Learning Where to Look for the Pancreas](https://arxiv.org/abs/1804.03999)
@@ -154,54 +230,3 @@ class AttentionGate(nn.Module):
         assert g.shape[1] == self.channels
 
         return x * self.attention(x + g)
-
-
-class ScaleAwareAdaption(nn.Module):
-    """
-    Reference: [Learning A Single Network for Scale-Arbitrary Super-Resolution](https://arxiv.org/abs/2004.03791)
-    Source: hhttps://github.com/The-Learning-And-Vision-Atelier-LAVA/ArbSR/blob/master/model/arbrcan.py
-    """
-
-    def __init__(
-        self,
-        channels: int,
-        kernel_size: int = 3,
-        n_experts: int = 4,
-    ) -> None:
-        super().__init__()
-        self.channels = channels
-        self.kernel_size = kernel_size
-        self.n_experts = n_experts
-
-        self.routing = nn.Sequential(
-            nn.Linear(2, n_experts * 4),
-            nn.GELU(),
-            nn.Linear(n_experts * 4, n_experts),
-            nn.Softmax(dim=1),
-        )
-        self.weight_pool = nn.Parameter(Tensor(n_experts, channels, 1, kernel_size, kernel_size))
-        nn.init.trunc_normal_(self.weight_pool, std=0.02)
-        self.bias_pool = nn.Parameter(Tensor(n_experts, channels))
-        nn.init.constant_(self.bias_pool, 0)
-
-        self.mask = nn.Sequential(
-            nn.Conv2d(channels, channels, kernel_size=kernel_size, padding="same"),
-            nn.GELU(),
-            nn.Conv2d(channels, 1, kernel_size=kernel_size, padding="same"),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x: Tensor, scale_h: float, scale_w: float) -> Tensor:
-        scale_h = torch.ones(1, 1).to(x.device) / scale_h
-        scale_w = torch.ones(1, 1).to(x.device) / scale_w
-
-        routing_weights = self.routing(torch.cat((scale_h, scale_w), 1)).view(self.n_experts, 1, 1)
-
-        fused_weight = (self.weight_pool.view(self.n_experts, -1, 1) * routing_weights).sum(0)
-        fused_weight = fused_weight.view(-1, 1, self.kernel_size, self.kernel_size)
-        fused_bias = (self.bias_pool.view(self.n_experts, -1, 1) * routing_weights).sum(0)
-        fused_bias = fused_bias.view(-1)
-
-        adapted = F.conv2d(x, fused_weight, fused_bias, padding="same", groups=self.channels)
-
-        return x + adapted * self.mask(x)
