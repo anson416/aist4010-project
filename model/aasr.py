@@ -227,15 +227,15 @@ class AASR(nn.Module):
         size: Optional[int | tuple[int, int]] = None,
         scale: float | tuple[float, float] = 1.0,
     ) -> tuple[Tensor, Tensor]:
-        if isinstance(size, int):
-            size = (size, size)
-        if isinstance(scale, float):
-            scale = (scale, scale)
-
         assert len(x.shape) == 4
         assert x.shape[1] == self.in_channels
         assert x.shape[2] % (1 << (len(self.levels) - 1)) == 0
         assert x.shape[3] % (1 << (len(self.levels) - 1)) == 0
+
+        if isinstance(size, int):
+            size = (size, size)
+        if isinstance(scale, float):
+            scale = (scale, scale)
 
         scale_h = scale[0] if size is None else size[0] / x.shape[2]
         scale_w = scale[1] if size is None else size[1] / x.shape[3]
@@ -282,7 +282,10 @@ class AASR(nn.Module):
         # Primary output
         out = self.concat(bicubic(x), bicubic(out)) if self.concat_orig_interp else bicubic(out)
         for idx, module in enumerate(self.output):
-            out = module(out, scale_h, scale_w) if idx == 0 else module(out)
+            if self.scale_aware:
+                out = module(out, scale_h, scale_w) if idx == 0 else module(out)
+            else:
+                out = module(out)
 
         return out, auxiliary
 
@@ -358,11 +361,14 @@ class AASR(nn.Module):
         return decoder
 
     def __make_output(self) -> nn.ModuleList:
+        channels = self.concat_orig_interp * self.in_channels + self.levels[0][0]
+        print(channels)
         return nn.ModuleList(
             [
-                ScaleAwareAdaption(
-                    channels := self.concat_orig_interp * self.in_channels + self.levels[0][0],
-                    n_experts=self.n_experts,
+                (
+                    ScaleAwareAdaption(channels, n_experts=self.n_experts)
+                    if self.scale_aware
+                    else nn.Conv2d(channels, channels, kernel_size=3, padding="same")
                 ),
                 nn.GELU(),
                 nn.Conv2d(channels, self.out_channels, kernel_size=3, padding="same"),
