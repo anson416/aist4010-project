@@ -3,6 +3,7 @@
 
 import time
 from datetime import datetime
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Optional
 
@@ -197,6 +198,14 @@ class PyTorchPipeline(object):
             plt.savefig(self._output_dir / f"{curve.lower().replace(' ', '_')}.png", dpi=300)
             plt.close()
 
+    @cached_property
+    def n_params(self) -> int:
+        return sum(p.numel() for p in self._model.parameters())
+
+    @cached_property
+    def n_trainable_params(self) -> int:
+        return sum(p.numel() for p in self._model.parameters() if p.requires_grad)
+
     @staticmethod
     def get_device() -> torch.device:
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -284,4 +293,5 @@ if __name__ == "__main__":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=EPOCHS // 2, gamma=0.1)
 
     pipeline = PyTorchPipeline(model, criterion, optimizer, scheduler=scheduler, device=device)
+    print(f"Trainable parameters: {pipeline.n_parameters:,}")
     pipeline.start(EPOCHS, train_dataloader, val_dataloader=val_dataloader)

@@ -39,8 +39,9 @@ def parse_args() -> Namespace:
     )
     parser.add_argument("--block", type=str, default="ConvNeXtBlock")
     parser.add_argument("--n_recurrent", type=int, default=0)
-    parser.add_argument("--use_channel_attention", action="store_true")
-    parser.add_argument("--use_attention_gate", action="store_true")
+    parser.add_argument("--channel_attention", action="store_true")
+    parser.add_argument("--scale_aware", action="store_true")
+    parser.add_argument("--attention_gate", action="store_true")
     parser.add_argument("--concat_orig_interp", action="store_true")
     parser.add_argument("--downsampler", type=str, default="conv2d", choices=("conv2d", "maxpool2d"))
     parser.add_argument(
@@ -51,6 +52,8 @@ def parse_args() -> Namespace:
     )
     parser.add_argument("--stochastic_depth_prob", type=float, default=0.0)
     parser.add_argument("--init_weights", action="store_true")
+    parser.add_argument("--reduction", type=int, default=16)
+    parser.add_argument("--n_experts", type=int, default=4)
     parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--beta", type=float, default=0.0)
     parser.add_argument("--gamma", type=float, default=0.5)
@@ -120,7 +123,9 @@ class TrainingPipeline(PyTorchPipeline):
                 pred, aux = self._model(x, size=size)
 
                 # Loss
-                loss = self._criterion(pred, y) + args.aux_weight * self._criterion(aux, y_aux)
+                loss = self._criterion(pred, y)
+                if args.aux_weight > 0:
+                    loss += args.aux_weight * self._criterion(aux, y_aux)
                 losses.append(loss.item())
 
                 # Backpropagation
@@ -210,13 +215,16 @@ configs = {
     "levels": getattr(aasr, args.levels.upper()),
     "block": args.block,
     "n_recurrent": args.n_recurrent,
-    "use_channel_attention": args.use_channel_attention,
-    "use_attention_gate": args.use_attention_gate,
+    "channel_attention": args.channel_attention,
+    "scale_aware": args.scale_aware,
+    "attention_gate": args.attention_gate,
     "concat_orig_interp": args.concat_orig_interp,
     "downsampler": args.downsampler,
     "upsampler": args.upsampler,
     "stochastic_depth_prob": args.stochastic_depth_prob,
     "init_weights": args.init_weights,
+    "reduction": args.reduction,
+    "n_experts": args.n_experts,
 }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -292,6 +300,7 @@ pipeline = TrainingPipeline(
     name=args.name,
     configs=configs,
 )
+print(f"Trainable parameters: {pipeline.n_parameters:,}")
 output_dir = pipeline.start(args.epochs, train_dataloader, val_dataloader=val_dataloader)
 
 with open(os.path.join(output_dir, "args.json"), "w") as f:
