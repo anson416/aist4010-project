@@ -50,6 +50,7 @@ def parse_args() -> Namespace:
         default="pixelshuffle",
         choices=("bicubic", "bilinear", "convtranspose2d", "pixelshuffle"),
     )
+    parser.add_argument("--super_upsampler", type=str, default="scale_aware", choices=("bicubic", "scale_aware"))
     parser.add_argument("--stochastic_depth_prob", type=float, default=0.0)
     parser.add_argument("--init_weights", action="store_true")
     parser.add_argument("--reduction", type=int, default=16)
@@ -114,9 +115,9 @@ class TrainingPipeline(PyTorchPipeline):
             batch = batch.to(self._device)
             indexes = rng.choice(n := len(train_asym_scales), clamp(int(n * args.asym_pct), 0, n), replace=False)
             for scale in np.concatenate((train_sym_scales, train_asym_scales[indexes]), axis=0):
-                size = (int(args.img_size * scale[0]), int(args.img_size * scale[1]))
+                size = (round(args.img_size * scale[0]), round(args.img_size * scale[1]))
                 y = K.RandomCrop(size, same_on_batch=False)(batch)
-                y_aux = K.Resize((args.img_size, args.img_size), resample=random.choice(self.RESAMPLES))(y)
+                y_aux = K.Resize([args.img_size] * 2, resample=random.choice(self.RESAMPLES), antialias=True)(y)
                 x = train_x_aug(y_aux)
 
                 # Feedforward
@@ -149,9 +150,9 @@ class TrainingPipeline(PyTorchPipeline):
         for batch in tqdm(dataloader, desc=f"{self.get_epoch_str(epoch, epochs)} Validating", leave=False):
             batch = batch.to(self._device)
             for scale in val_scales:
-                size = (int(args.img_size * scale[0]), int(args.img_size * scale[1]))
+                size = (round(args.img_size * scale[0]), round(args.img_size * scale[1]))
                 y = K.CenterCrop(size)(batch)
-                y_aux = K.Resize((args.img_size, args.img_size), resample=Resample.BICUBIC.name)(y)
+                y_aux = K.Resize([args.img_size] * 2, resample=Resample.BICUBIC.name, antialias=True)(y)
                 x = y_aux
 
                 # Feedforward

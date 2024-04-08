@@ -55,7 +55,7 @@ class Upscaler(object):
         device: Optional[torch.device] = None,
     ) -> None:
         self.model_path = model_path
-        self.device = device or PyTorchPipeline.get_device()
+        self.device = PyTorchPipeline.get_device() if device is None else device
 
         checkpoint = torch.load(model_path, map_location=self.device)
         self.model = AASR(**checkpoint["configs"]).to(self.device)
@@ -90,17 +90,15 @@ class Upscaler(object):
         h, w = img.shape[-2:]
 
         if size is None:
-            out_h, out_w = int(h * scale[0]), int(w * scale[1])
-            scale_h, scale_w = scale
+            out_h, out_w = round(h * scale[0]), round(w * scale[1])
         else:
             out_h, out_w = size
-            scale_h, scale_w = out_h / h, out_w / w
 
         multiple = 1 << (len(self.model.levels) - 1)
         pad_h = multiple - rh if (rh := h % multiple) != 0 else 0
         pad_w = multiple - rw if (rw := w % multiple) != 0 else 0
         img = F.pad(img, (0, pad_w, 0, pad_h), mode="reflect").to(self.device)
-        pred, _ = self.model(img, scale=(scale_h, scale_w))
+        pred, _ = self.model(img, size=(out_h, out_w))
         pred = torch.clamp(pred, min=0.0, max=1.0)
 
         return pred[:, :, :out_h, :out_w]

@@ -2,7 +2,7 @@
 # File: model/aasr.py
 
 from collections.abc import Sequence
-from typing import Any, Literal, Optional, Type
+from typing import Any, Literal, Type
 
 from torch import Tensor, nn
 
@@ -13,7 +13,7 @@ from .utils import (
     Concatenation,
     LayerNorm2d,
     RecurrentAttentionBlock,
-    ScaleAwareAdaption,
+    ScaleAwareUpsampler,
 )
 
 __all__ = [
@@ -27,9 +27,9 @@ __all__ = [
     "HUGE",
 ]
 
-MOBILE = ((16, 3), (32, 3))  # ~53K parameters
+MOBILE = ((16, 3), (32, 3))  # ~64K parameters
 TINY = ((32, 6), (64, 12), (128, 6))  # ~1.6M parameters
-SMALL = ((64, 3), (128, 3), (256, 9), (512, 3))  # ~18M parameters
+SMALL = ((64, 3), (128, 3), (256, 9), (512, 3))  # ~19M parameters
 BASE = ((64, 9), (128, 9), (256, 27), (512, 9))  # ~43M parameters
 LARGE = ((96, 9), (192, 9), (384, 27), (768, 9))  # ~95M parameters
 XLARGE = ((96, 15), (192, 15), (384, 45), (768, 15))  # ~149M parameters
@@ -43,24 +43,26 @@ class Downsampler(nn.Module):
         out_channels: int,
         scale: int,
         mode: Literal["conv2d", "maxpool2d"] = "conv2d",
+        eps: float = 1e-6,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.scale = scale
         self.mode = mode
+        self.eps = eps
 
         if scale == 1:
             self.downsampler = nn.Identity()
         else:
             if mode == "conv2d":
                 self.downsampler = nn.Sequential(
-                    LayerNorm2d(in_channels, eps=1e-6),
+                    LayerNorm2d(in_channels, eps=eps),
                     nn.Conv2d(in_channels, out_channels, kernel_size=scale, stride=scale),
                 )
             elif mode == "maxpool2d":
                 self.downsampler = nn.Sequential(
-                    LayerNorm2d(in_channels, eps=1e-6),
+                    LayerNorm2d(in_channels, eps=eps),
                     nn.MaxPool2d(kernel_size=scale, stride=scale),
                     ChannelModification(in_channels, out_channels),
                 )
@@ -118,6 +120,7 @@ class Collector(nn.Module):
         attention: bool = False,
         downsampler: Literal["conv2d", "maxpool2d"] = "conv2d",
         upsampler: Literal["bicubic", "bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
+        eps: float = 1e-6,
     ) -> None:
         super().__init__()
         self.levels = levels
@@ -125,6 +128,7 @@ class Collector(nn.Module):
         self.attention = attention
         self.downsampler = downsampler
         self.upsampler = upsampler
+        self.eps = eps
 
         channels = levels[level][0]
         self.concat = Concatenation(dim=1)
@@ -152,7 +156,7 @@ class Collector(nn.Module):
         )
         if attention:
             self.conv = ChannelModification((level + 1) * channels, channels)
-            self.attention_gate = AttentionGate(channels)
+            self.attention_gate = AttentionGate(channels, eps=eps)
         self.collector = ChannelModification((len(levels) - level * attention) * channels, channels)
 
     def forward(self, encoded: list[Tensor], decoded: list[Tensor]) -> Tensor:
@@ -179,11 +183,12 @@ class AASR(nn.Module):
         block: str | Type[nn.Module] = "ConvNeXtBlock",
         n_recurrent: int = 1,
         channel_attention: bool = True,
-        scale_aware: bool = True,
+        scale_aware_adaption: bool = True,
         attention_gate: bool = True,
         concat_orig_interp: bool = True,
         downsampler: Literal["conv2d", "maxpool2d"] = "conv2d",
         upsampler: Literal["bicubic", "bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
+        super_upsampler: Literal["bicubic", "scale_aware"] = "scale_aware",
         stochastic_depth_prob: float = 0.1,
         init_weights: bool = True,
         **kwargs: Any,
@@ -201,21 +206,25 @@ class AASR(nn.Module):
         self.out_channels = out_channels
         self.n_recurrent = n_recurrent
         self.channel_attention = channel_attention
-        self.scale_aware = scale_aware
+        self.scale_aware_adaption = scale_aware_adaption
         self.attention_gate = attention_gate
         self.concat_orig_interp = concat_orig_interp
         self.downsampler = downsampler
         self.upsampler = upsampler
+        self.super_upsampler = super_upsampler
         self.stochastic_depth_prob = stochastic_depth_prob
         self.init_weights = init_weights
         self.reduction: int = kwargs.pop("reduction", 16)
         self.n_experts: int = kwargs.pop("n_experts", 4)
+        self.eps: float = kwargs.pop("eps", 1e-6)
         self.kwargs = kwargs
 
         self.concat = Concatenation(dim=1)
         self.stem = self.__make_stem()
         self.encoder = self.__make_encoder()
         self.decoder = self.__make_decoder()
+        if self.super_upsampler == "scale_aware":
+            self.scale_aware_upsampler = ScaleAwareUpsampler(levels[0][0], n_experts=self.n_experts, eps=self.eps)
         self.output = self.__make_output()
         self.auxiliary = self.__make_auxiliary()
 
@@ -225,8 +234,7 @@ class AASR(nn.Module):
     def forward(
         self,
         x: Tensor,
-        size: Optional[int | tuple[int, int]] = None,
-        scale: float | tuple[float, float] = 1.0,
+        size: int | tuple[int, int],
     ) -> tuple[Tensor, Tensor]:
         assert len(x.shape) == 4
         assert x.shape[1] == self.in_channels
@@ -235,16 +243,11 @@ class AASR(nn.Module):
 
         if isinstance(size, int):
             size = (size, size)
-        if isinstance(scale, float):
-            scale = (scale, scale)
 
-        scale_h = scale[0] if size is None else size[0] / x.shape[2]
-        scale_w = scale[1] if size is None else size[1] / x.shape[3]
+        scale_h, scale_w = size[0] / x.shape[2], size[1] / x.shape[3]
 
         # Instantiate a bicubic upsampler for later use
-        bicubic = (
-            nn.Upsample(scale_factor=scale, mode="bicubic") if size is None else nn.Upsample(size=size, mode="bicubic")
-        )
+        bicubic = nn.Upsample(size=size, mode="bicubic")
 
         stem = self.stem(x)
         out = stem
@@ -281,12 +284,9 @@ class AASR(nn.Module):
         auxiliary = self.auxiliary(out)
 
         # Primary output
-        out = self.concat(bicubic(x), bicubic(out)) if self.concat_orig_interp else bicubic(out)
-        for idx, module in enumerate(self.output):
-            if self.scale_aware:
-                out = module(out, scale_h, scale_w) if idx == 0 else module(out)
-            else:
-                out = module(out)
+        out = self.scale_aware_upsampler(out, *size) if self.super_upsampler == "scale_aware" else bicubic(out)
+        out = self.concat(bicubic(stem), out) if self.concat_orig_interp else out
+        out = self.output(out)
 
         return out, auxiliary
 
@@ -300,7 +300,7 @@ class AASR(nn.Module):
     def __make_stem(self) -> nn.Sequential:
         return nn.Sequential(
             nn.Conv2d(self.in_channels, self.levels[0][0], kernel_size=3, padding="same"),
-            LayerNorm2d(self.levels[0][0], eps=1e-6),
+            LayerNorm2d(self.levels[0][0], eps=self.eps),
         )
 
     def __make_encoder(self) -> nn.ModuleList:
@@ -317,10 +317,11 @@ class AASR(nn.Module):
                         channels,
                         n_recurrent=self.n_recurrent,
                         attention=self.channel_attention,
-                        scale_aware=True if self.scale_aware and i % 3 == 0 else False,
+                        scale_aware=True if self.scale_aware_adaption and i % 3 == 0 else False,
                         stochastic_depth_prob=self.stochastic_depth_prob * block_id / total_blocks,
                         reduction=self.reduction,
                         n_experts=self.n_experts,
+                        eps=self.eps,
                         **self.kwargs,
                     )
                 )
@@ -346,6 +347,7 @@ class AASR(nn.Module):
                         attention=self.attention_gate,
                         downsampler=self.downsampler,
                         upsampler=self.upsampler,
+                        eps=self.eps,
                     ),
                     RecurrentAttentionBlock(
                         self.block,
@@ -353,6 +355,7 @@ class AASR(nn.Module):
                         n_recurrent=self.n_recurrent,
                         attention=self.channel_attention,
                         reduction=self.reduction,
+                        eps=self.eps,
                         **self.kwargs,
                     ),
                 ]
@@ -361,21 +364,21 @@ class AASR(nn.Module):
 
         return decoder
 
-    def __make_output(self) -> nn.ModuleList:
-        channels = self.concat_orig_interp * self.in_channels + self.levels[0][0]
-        return nn.ModuleList(
-            [
-                (
-                    ScaleAwareAdaption(channels, n_experts=self.n_experts)
-                    if self.scale_aware
-                    else nn.Conv2d(channels, channels, kernel_size=3, padding="same")
-                ),
-                nn.GELU(),
-                nn.Conv2d(channels, self.out_channels, kernel_size=3, padding="same"),
-            ]
+    def __make_output(self) -> nn.Sequential:
+        return nn.Sequential(
+            nn.Conv2d(
+                self.levels[0][0] * (1 + self.concat_orig_interp),
+                self.levels[0][0],
+                kernel_size=3,
+                padding="same",
+            ),
+            nn.GELU(),
+            nn.Conv2d(self.levels[0][0], self.out_channels, kernel_size=3, padding="same"),
         )
 
     def __make_auxiliary(self) -> nn.Sequential:
         return nn.Sequential(
+            nn.Conv2d(self.levels[0][0], self.levels[0][0], kernel_size=3, padding="same"),
+            nn.GELU(),
             nn.Conv2d(self.levels[0][0], self.out_channels, kernel_size=3, padding="same"),
         )

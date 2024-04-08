@@ -21,7 +21,6 @@ class ResNetBlockV2(nn.Module):
     def __init__(
         self,
         channels: int,
-        *,
         expansion: int = 4,
         **kwargs: Any,
     ) -> None:
@@ -58,7 +57,6 @@ class ConvNeXtBlock(nn.Module):
     def __init__(
         self,
         channels: int,
-        *,
         expansion: int = 4,
         layer_scale_init_value: float = 1e-6,
         **kwargs: Any,
@@ -94,7 +92,6 @@ class ConvNeXtBlockV2(nn.Module):
     def __init__(
         self,
         channels: int,
-        *,
         expansion: int = 4,
         **kwargs: Any,
     ) -> None:
