@@ -99,8 +99,6 @@ class SRDataset(Dataset):
 
 
 class TrainingPipeline(PyTorchPipeline):
-    RESAMPLES = (Resample.BILINEAR.name, Resample.BICUBIC.name)
-
     # Override
     def train(
         self,
@@ -117,7 +115,11 @@ class TrainingPipeline(PyTorchPipeline):
             for scale in np.concatenate((train_sym_scales, train_asym_scales[indexes]), axis=0):
                 size = (round(args.img_size * scale[0]), round(args.img_size * scale[1]))
                 y = K.RandomCrop(size, same_on_batch=False)(batch)
-                y_aux = K.Resize([args.img_size] * 2, resample=random.choice(self.RESAMPLES), antialias=True)(y)
+                y_aux = K.Resize(
+                    [args.img_size] * 2,
+                    resample=random.choice((Resample.BILINEAR.name, Resample.BICUBIC.name)),
+                    antialias=random.choice((True, False)),
+                )(y)
                 x = train_x_aug(y_aux)
 
                 # Feedforward
