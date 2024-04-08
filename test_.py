@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 # File: test.py
 
+import argparse
 import json
 import os
+from argparse import Namespace
 from statistics import mean
 from typing import Optional
 
@@ -18,6 +20,17 @@ from tqdm import tqdm
 from infer import Upscaler
 from utils.file_ops import iter_files
 from utils.pytorch_pipeline import PyTorchPipeline
+
+
+def parse_args() -> Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("model_path", type=str, help="Path to AASR model (.pt).")
+    parser.add_argument("output_dir", type=str)
+    parser.add_argument("--test_dir", type=str, default="./data/test")
+    parser.add_argument("--scales", nargs="+", type=float)
+    parser.add_argument("--border", type=int, default=None)
+    parser.add_argument("--save", action="store_true")
+    return parser.parse_args()
 
 
 def test(
@@ -82,3 +95,15 @@ def test(
 
         with open(os.path.join(output_dir, "test-result.json"), "w") as f:
             json.dump(result, f, indent=2)
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    test(
+        args.model_path,
+        args.output_dir,
+        test_dir=args.test_dir,
+        scales=args.scales,
+        border=args.border,
+        save=args.save,
+    )
