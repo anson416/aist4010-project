@@ -16,7 +16,7 @@ from model import AASR
 from utils.pytorch_pipeline import PyTorchPipeline
 
 
-def parse_args() -> Namespace | Callable[[], None]:
+def parse_args() -> tuple[Namespace, Callable[[], None]]:
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group()
     parser.add_argument("model_path", type=str, help="Path to AASR model (.pt).")
