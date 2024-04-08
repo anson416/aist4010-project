@@ -24,6 +24,7 @@ from tqdm import tqdm
 
 from loss import FFT2DLoss, MeanGradientError, MultiScaleSSIMLoss
 from model import *
+from test_ import test
 from utils.file_ops import iter_files
 from utils.num_ops import clamp
 from utils.pytorch_pipeline import PyTorchPipeline
@@ -35,12 +36,12 @@ def parse_args() -> Namespace:
         "--levels",
         type=str,
         default="BASE",
-        choices=("TINY", "SMALL", "BASE", "LARGE", "XLARGE", "HUGE"),
+        choices=("MOBILE", "TINY", "SMALL", "BASE", "LARGE", "XLARGE", "HUGE"),
     )
     parser.add_argument("--block", type=str, default="ConvNeXtBlock")
     parser.add_argument("--n_recurrent", type=int, default=0)
     parser.add_argument("--channel_attention", action="store_true")
-    parser.add_argument("--scale_aware", action="store_true")
+    parser.add_argument("--scale_aware_adaption", action="store_true")
     parser.add_argument("--attention_gate", action="store_true")
     parser.add_argument("--concat_orig_interp", action="store_true")
     parser.add_argument("--downsampler", type=str, default="conv2d", choices=("conv2d", "maxpool2d"))
@@ -72,6 +73,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--n_workers", type=int, default=8)
     parser.add_argument("--train_dir", type=str, default="./data/train")
     parser.add_argument("--val_dir", type=str, default="./data/valid")
+    parser.add_argument("--test_dir", type=str, default="./data/test")
     parser.add_argument("--name", type=str, default=None)
     return parser.parse_args()
 
@@ -221,11 +223,12 @@ configs = {
     "block": args.block,
     "n_recurrent": args.n_recurrent,
     "channel_attention": args.channel_attention,
-    "scale_aware": args.scale_aware,
+    "scale_aware_adaption": args.scale_aware_adaption,
     "attention_gate": args.attention_gate,
     "concat_orig_interp": args.concat_orig_interp,
     "downsampler": args.downsampler,
     "upsampler": args.upsampler,
+    "super_upsampler": args.super_upsampler,
     "stochastic_depth_prob": args.stochastic_depth_prob,
     "init_weights": args.init_weights,
     "reduction": args.reduction,
@@ -305,8 +308,10 @@ pipeline = TrainingPipeline(
     name=args.name,
     configs=configs,
 )
-print(f"Trainable parameters: {pipeline.n_parameters:,}")
+print(f"Trainable parameters: {pipeline.n_trainable_params:,}")
 output_dir = pipeline.start(args.epochs, train_dataloader, val_dataloader=val_dataloader)
 
 with open(os.path.join(output_dir, "args.json"), "w") as f:
     json.dump(vars(args), f, indent=2)
+
+test(os.path.join(output_dir, "checkpoint_best.pt"), output_dir, test_dir=args.test_dir)
