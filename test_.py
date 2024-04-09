@@ -27,7 +27,7 @@ def parse_args() -> Namespace:
     parser.add_argument("model_path", type=str, help="Path to AASR model (.pt).")
     parser.add_argument("output_dir", type=str)
     parser.add_argument("--test_dir", type=str, default="./data/test")
-    parser.add_argument("--scales", nargs="+", type=float)
+    parser.add_argument("--scales", nargs="+", type=float, default=(2, 3, 4))
     parser.add_argument("--border", type=int, default=None)
     parser.add_argument("--save", action="store_true")
     return parser.parse_args()
@@ -67,6 +67,7 @@ def test(
             target: Tensor = to_tensor(Image.open(f).convert(mode="RGB"))
             target = target.unsqueeze(0).to(device)
             target_h, target_w = target.shape[-2:]
+            target_rgb = target if border is None else target[:, :, border:-border, border:-border]
             for scale in scales:
                 img_h, img_w = target_h // scale, target_w // scale
                 img = v2.Resize((img_h, img_w), interpolation=InterpolationMode.BICUBIC, antialias=True)(target)
@@ -75,16 +76,15 @@ def test(
                 if save:
                     final_dir = os.path.join(upscaled_dir, dataset, f"X{scale}")
                     os.makedirs(final_dir, exist_ok=True)
-                    to_pil(upscaled).save(os.path.join(final_dir, f))
+                    to_pil(upscaled.squeeze()).save(os.path.join(final_dir, f.name))
 
-                upscaled = upscaled[:, :, border:-border, border:-border]
-                target = target[:, :, border:-border, border:-border]
+                upscaled_rgb = upscaled if border is None else upscaled[:, :, border:-border, border:-border]
                 upscaled_y = rgb_to_ycbcr(upscaled)[:, :1]
                 target_y = rgb_to_ycbcr(target)[:, :1]
 
-                result[dataset][scale]["PSNR_RGB"].append(psnr(upscaled, target).item())
+                result[dataset][scale]["PSNR_RGB"].append(psnr(upscaled_rgb, target_rgb).item())
                 result[dataset][scale]["PSNR_Y"].append(psnr(upscaled_y, target_y).item())
-                result[dataset][scale]["SSIM_RGB"].append(ssim(upscaled, target).item())
+                result[dataset][scale]["SSIM_RGB"].append(ssim(upscaled_rgb, target_rgb).item())
                 result[dataset][scale]["SSIM_Y"].append(ssim(upscaled_y, target_y).item())
 
         for scale in scales:
