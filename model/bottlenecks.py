@@ -31,13 +31,13 @@ class ResNetBlockV2(nn.Module):
         expanded = channels * expansion
         self.block = nn.Sequential(
             nn.BatchNorm2d(channels),
-            nn.ReLU(inplace=True),
+            nn.GELU(),
             nn.Conv2d(channels, channels, kernel_size=3, padding="same", bias=False),
             nn.BatchNorm2d(channels),
-            nn.ReLU(inplace=True),
+            nn.GELU(),
             nn.Conv2d(channels, expanded, kernel_size=1, bias=False),
             nn.BatchNorm2d(expanded),
-            nn.ReLU(inplace=True),
+            nn.GELU(),
             nn.Conv2d(expanded, channels, kernel_size=1),
         )
 
