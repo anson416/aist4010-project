@@ -111,3 +111,26 @@ class ConvNeXtBlockV2(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return self.block(x)
+
+
+class EDSRBlock(nn.Module):
+    """
+    NOTE: The residual connection is missing, as this module is supposed to be
+    used indirectly by `utils.RecurrentAttentionBlock()`.
+
+    Reference: [Enhanced Deep Residual Networks for Single Image Super-Resolution](https://arxiv.org/abs/1707.02921)
+    Source: https://github.com/sanghyun-son/EDSR-PyTorch/blob/master/src/model/common.py
+    """
+
+    def __init__(self, channels: int, **kwargs: Any) -> None:
+        super().__init__()
+        self.channels = channels
+
+        self.block = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=3, padding="same"),
+            nn.GELU(),
+            nn.Conv2d(channels, channels, kernel_size=3, padding="same"),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.block(x)
