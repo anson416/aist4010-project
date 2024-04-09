@@ -39,11 +39,6 @@ def parse_args() -> Namespace:
         choices=("MOBILE", "TINY", "SMALL", "BASE", "LARGE", "XLARGE", "HUGE"),
     )
     parser.add_argument("--block", type=str, default="ConvNeXtBlock")
-    parser.add_argument("--n_recurrent", type=int, default=0)
-    parser.add_argument("--channel_attention", action="store_true")
-    parser.add_argument("--scale_aware_adaption", action="store_true")
-    parser.add_argument("--attention_gate", action="store_true")
-    parser.add_argument("--concat_orig_interp", action="store_true")
     parser.add_argument("--downsampler", type=str, default="conv2d", choices=("conv2d", "maxpool2d"))
     parser.add_argument(
         "--upsampler",
@@ -52,6 +47,11 @@ def parse_args() -> Namespace:
         choices=("bicubic", "bilinear", "convtranspose2d", "pixelshuffle"),
     )
     parser.add_argument("--super_upsampler", type=str, default="scale_aware", choices=("bicubic", "scale_aware"))
+    parser.add_argument("--n_recurrent", type=int, default=0)
+    parser.add_argument("--channel_attention", action="store_true")
+    parser.add_argument("--scale_aware_adaption", action="store_true")
+    parser.add_argument("--attention_gate", action="store_true")
+    parser.add_argument("--concat_orig_interp", action="store_true")
     parser.add_argument("--stochastic_depth_prob", type=float, default=0.0)
     parser.add_argument("--init_weights", action="store_true")
     parser.add_argument("--reduction", type=int, default=16)

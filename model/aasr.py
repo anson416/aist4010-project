@@ -181,14 +181,14 @@ class AASR(nn.Module):
         in_channels: int = 3,
         out_channels: int = 3,
         block: str | Type[nn.Module] = "ConvNeXtBlock",
-        n_recurrent: int = 1,
-        channel_attention: bool = True,
-        scale_aware_adaption: bool = True,
-        attention_gate: bool = True,
-        concat_orig_interp: bool = True,
         downsampler: Literal["conv2d", "maxpool2d"] = "conv2d",
         upsampler: Literal["bicubic", "bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
         super_upsampler: Literal["bicubic", "scale_aware"] = "scale_aware",
+        n_recurrent: int = 0,
+        channel_attention: bool = False,
+        scale_aware_adaption: bool = False,
+        attention_gate: bool = False,
+        concat_orig_interp: bool = False,
         stochastic_depth_prob: float = 0.1,
         init_weights: bool = True,
         **kwargs: Any,
@@ -200,18 +200,18 @@ class AASR(nn.Module):
         assert 0.0 <= stochastic_depth_prob <= 1.0
 
         super().__init__()
-        self.block = getattr(bottlenecks, block) if isinstance(block, str) else block
         self.levels = levels
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.block = getattr(bottlenecks, block) if isinstance(block, str) else block
+        self.downsampler = downsampler
+        self.upsampler = upsampler
+        self.super_upsampler = super_upsampler
         self.n_recurrent = n_recurrent
         self.channel_attention = channel_attention
         self.scale_aware_adaption = scale_aware_adaption
         self.attention_gate = attention_gate
         self.concat_orig_interp = concat_orig_interp
-        self.downsampler = downsampler
-        self.upsampler = upsampler
-        self.super_upsampler = super_upsampler
         self.stochastic_depth_prob = stochastic_depth_prob
         self.init_weights = init_weights
         self.reduction: int = kwargs.pop("reduction", 16)
