@@ -180,8 +180,8 @@ class AASR(nn.Module):
         levels: Sequence[tuple[int, int]] = BASE,
         in_channels: int = 3,
         out_channels: int = 3,
-        block: str | Type[nn.Module] = "ConvNeXtBlock",
-        downsampler: Literal["conv2d", "maxpool2d"] = "conv2d",
+        block: str | Type[nn.Module] = "ResNetBlockV2",
+        downsampler: Literal["conv2d", "maxpool2d"] = "maxpool2d",
         upsampler: Literal["bicubic", "bilinear", "convtranspose2d", "pixelshuffle"] = "pixelshuffle",
         super_upsampler: Literal["bicubic", "scale_aware"] = "scale_aware",
         n_recurrent: int = 0,
@@ -189,6 +189,7 @@ class AASR(nn.Module):
         scale_aware_adaption: bool = False,
         attention_gate: bool = False,
         concat_orig_interp: bool = False,
+        layer_norm: bool = False,
         stochastic_depth_prob: float = 0.1,
         init_weights: bool = True,
         **kwargs: Any,
@@ -212,6 +213,7 @@ class AASR(nn.Module):
         self.scale_aware_adaption = scale_aware_adaption
         self.attention_gate = attention_gate
         self.concat_orig_interp = concat_orig_interp
+        self.layer_norm = layer_norm
         self.stochastic_depth_prob = stochastic_depth_prob
         self.init_weights = init_weights
         self.reduction: int = kwargs.pop("reduction", 16)
@@ -323,6 +325,7 @@ class AASR(nn.Module):
                         n_recurrent=self.n_recurrent,
                         attention=self.channel_attention,
                         scale_aware=True if self.scale_aware_adaption and i % 3 == 0 else False,
+                        layer_norm=self.layer_norm,
                         stochastic_depth_prob=self.stochastic_depth_prob * block_id / total_blocks,
                         reduction=self.reduction,
                         n_experts=self.n_experts,
@@ -359,6 +362,7 @@ class AASR(nn.Module):
                         channels,
                         n_recurrent=self.n_recurrent,
                         attention=self.channel_attention,
+                        layer_norm=self.layer_norm,
                         reduction=self.reduction,
                         eps=self.eps,
                         **self.kwargs,

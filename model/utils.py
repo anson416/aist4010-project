@@ -145,6 +145,7 @@ class RecurrentAttentionBlock(nn.Module):
         n_recurrent: int = 0,
         attention: bool = False,
         scale_aware: bool = False,
+        layer_norm: bool = False,
         stochastic_depth_prob: float = 0.0,
         **kwargs: Any,
     ) -> None:
@@ -154,12 +155,13 @@ class RecurrentAttentionBlock(nn.Module):
         self.n_recurrent = n_recurrent
         self.attention = attention
         self.scale_aware = scale_aware
+        self.layer_norm = layer_norm
         self.stochastic_depth_prob = stochastic_depth_prob
         self.reduction: int = kwargs.pop("reduction", 16)
         self.n_experts: int = kwargs.pop("n_experts", 4)
         self.eps: float = kwargs.pop("eps", 1e-6)
 
-        self.bottleneck = block(channels, **kwargs)
+        self.bottleneck = block(channels, layer_norm=layer_norm, eps=self.eps, **kwargs)
         if attention:
             self.channel_attention = ChannelAttention(channels, reduction=self.reduction)
         if scale_aware:

@@ -22,21 +22,24 @@ class ResNetBlockV2(nn.Module):
         self,
         channels: int,
         expansion: int = 4,
+        layer_norm: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__()
         self.channels = channels
         self.expansion = expansion
+        self.layer_norm = layer_norm
+        self.eps: float = kwargs.pop("eps", 1e-6)
 
         expanded = channels * expansion
         self.block = nn.Sequential(
-            nn.BatchNorm2d(channels),
+            LayerNorm2d(channels, eps=self.eps) if layer_norm else nn.BatchNorm2d(channels),
             nn.GELU(),
-            nn.Conv2d(channels, channels, kernel_size=3, padding="same", bias=False),
-            nn.BatchNorm2d(channels),
+            nn.Conv2d(channels, channels, kernel_size=3, padding="same", bias=layer_norm),
+            LayerNorm2d(channels, eps=self.eps) if layer_norm else nn.BatchNorm2d(channels),
             nn.GELU(),
-            nn.Conv2d(channels, expanded, kernel_size=1, bias=False),
-            nn.BatchNorm2d(expanded),
+            nn.Conv2d(channels, expanded, kernel_size=1, bias=layer_norm),
+            LayerNorm2d(expanded, eps=self.eps) if layer_norm else nn.BatchNorm2d(expanded),
             nn.GELU(),
             nn.Conv2d(expanded, channels, kernel_size=1),
         )
@@ -65,11 +68,12 @@ class ConvNeXtBlock(nn.Module):
         self.channels = channels
         self.expansion = expansion
         self.layer_scale_init_value = layer_scale_init_value
+        self.eps: float = kwargs.pop("eps", 1e-6)
 
         expanded = channels * expansion
         self.block = nn.Sequential(
             nn.Conv2d(channels, channels, kernel_size=7, padding="same", groups=channels),
-            LayerNorm2d(channels, eps=1e-6),
+            LayerNorm2d(channels, eps=self.eps),
             nn.Conv2d(channels, expanded, kernel_size=1),
             nn.GELU(),
             nn.Conv2d(expanded, channels, kernel_size=1),
@@ -98,11 +102,12 @@ class ConvNeXtBlockV2(nn.Module):
         super().__init__()
         self.channels = channels
         self.expansion = expansion
+        self.eps: float = kwargs.pop("eps", 1e-6)
 
         expanded = channels * expansion
         self.block = nn.Sequential(
             nn.Conv2d(channels, channels, kernel_size=7, padding="same", groups=channels),
-            LayerNorm2d(channels, eps=1e-6),
+            LayerNorm2d(channels, eps=self.eps),
             nn.Conv2d(channels, expanded, kernel_size=1),
             nn.GELU(),
             GRN(expanded),
