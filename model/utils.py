@@ -65,11 +65,12 @@ class ChannelAttention(nn.Module):
         self.channels = channels
         self.reduction = reduction
 
+        reduced = max(channels // reduction, 1)
         self.attention = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(channels, channels // reduction, kernel_size=1),
+            nn.Conv2d(channels, reduced, kernel_size=1),
             nn.GELU(),
-            nn.Conv2d(channels // reduction, channels, kernel_size=1),
+            nn.Conv2d(reduced, channels, kernel_size=1),
             nn.Sigmoid(),
         )
 
@@ -288,17 +289,21 @@ class ScaleAwareUpsampler(nn.Module):
         self,
         channels: int,
         n_experts: int = 4,
+        reduction: int = 16,
         eps: float = 1e-6,
     ) -> None:
         super().__init__()
         self.channels = channels
         self.n_experts = n_experts
+        self.reduction = reduction
         self.eps = eps
 
+        self.reduced = max(channels // reduction, 1)
+
         # experts
-        self.weight_compress = nn.Parameter(Tensor(n_experts, channels // 8, channels, 1, 1))
+        self.weight_compress = nn.Parameter(Tensor(n_experts, self.reduced, channels, 1, 1))
         nn.init.kaiming_uniform_(self.weight_compress, a=math.sqrt(5))
-        self.weight_expand = nn.Parameter(Tensor(n_experts, channels, channels // 8, 1, 1))
+        self.weight_expand = nn.Parameter(Tensor(n_experts, channels, self.reduced, 1, 1))
         nn.init.kaiming_uniform_(self.weight_expand, a=math.sqrt(5))
 
         # two FC layers
@@ -308,12 +313,14 @@ class ScaleAwareUpsampler(nn.Module):
             nn.Conv2d(64, 64, kernel_size=1),
             nn.GELU(),
         )
+
         # routing head
         self.routing = nn.Sequential(
             nn.Conv2d(64, n_experts, kernel_size=1),
             nn.Sigmoid(),
         )
         # offset head
+
         self.offset = nn.Conv2d(64, 2, kernel_size=1)
 
     def forward(self, x: Tensor, out_h: int, out_w: int) -> Tensor:
@@ -353,11 +360,11 @@ class ScaleAwareUpsampler(nn.Module):
 
         weight_compress = self.weight_compress.view(self.n_experts, -1)
         weight_compress = torch.matmul(routing_weights, weight_compress)
-        weight_compress = weight_compress.view(1, out_h, out_w, self.channels // 8, self.channels)
+        weight_compress = weight_compress.view(1, out_h, out_w, self.reduced, self.channels)
 
         weight_expand = self.weight_expand.view(self.n_experts, -1)
         weight_expand = torch.matmul(routing_weights, weight_expand)
-        weight_expand = weight_expand.view(1, out_h, out_w, self.channels, self.channels // 8)
+        weight_expand = weight_expand.view(1, out_h, out_w, self.channels, self.reduced)
 
         # (3) grid sample & spatially varying filtering
         ## grid sample

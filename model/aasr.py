@@ -224,7 +224,12 @@ class AASR(nn.Module):
         self.encoder = self.__make_encoder()
         self.decoder = self.__make_decoder()
         if self.super_upsampler == "scale_aware":
-            self.scale_aware_upsampler = ScaleAwareUpsampler(levels[0][0], n_experts=self.n_experts, eps=self.eps)
+            self.scale_aware_upsampler = ScaleAwareUpsampler(
+                levels[0][0],
+                n_experts=self.n_experts,
+                reduction=self.reduction,
+                eps=self.eps,
+            )
         self.output = self.__make_output()
         self.auxiliary = self.__make_auxiliary()
 
