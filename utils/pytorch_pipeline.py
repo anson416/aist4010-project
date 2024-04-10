@@ -100,7 +100,7 @@ class PyTorchPipeline(object):
                 f"{self.get_epoch_str(epoch, epochs)} -",
                 f"train_loss: {train_loss:.{self._precision}f},",
                 f"{f'val_loss: {val_loss:.{self._precision}f},' if val_loss is not None else ''}",
-                f"lr: {lr},",
+                f"lr: {lr:.{self._precision}e},",
                 f"epoch_time: {self.format_time_elapsed(epoch_end_time - epoch_start_time)},",
                 f"ETR: {self.get_etr(epoch, epochs, epoch_end_time - start_time)}",
                 flush=True,
