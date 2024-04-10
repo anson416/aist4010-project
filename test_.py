@@ -55,7 +55,8 @@ def test(
     psnr = PeakSignalNoiseRatio(data_range=1.0).to(device)
     ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
 
-    result = {}
+    all_psnr_rgb, all_psnr_y, all_ssim_rgb, all_ssim_y = [], [], [], []
+    result = {"mean": {"PSNR_RGB": 0, "PSNR_Y": 0, "SSIM_RGB": 0, "SSIM_Y": 0}}
     for dataset in tqdm(os.listdir(test_dir), desc="Testing"):
         path = os.path.join(test_dir, dataset)
         if not os.path.isdir(path):
@@ -88,10 +89,26 @@ def test(
                 result[dataset][scale]["SSIM_Y"].append(ssim(upscaled_y, target_y).item())
 
         for scale in scales:
-            result[dataset][scale]["PSNR_RGB"] = mean(result[dataset][scale]["PSNR_RGB"])
-            result[dataset][scale]["PSNR_Y"] = mean(result[dataset][scale]["PSNR_Y"])
-            result[dataset][scale]["SSIM_RGB"] = mean(result[dataset][scale]["SSIM_RGB"])
-            result[dataset][scale]["SSIM_Y"] = mean(result[dataset][scale]["SSIM_Y"])
+            psnr_rgb = mean(result[dataset][scale]["PSNR_RGB"])
+            result[dataset][scale]["PSNR_RGB"] = psnr_rgb
+            all_psnr_rgb.append(psnr_rgb)
+
+            psnr_y = mean(result[dataset][scale]["PSNR_Y"])
+            result[dataset][scale]["PSNR_Y"] = psnr_y
+            all_psnr_y.append(psnr_y)
+
+            ssim_rgb = mean(result[dataset][scale]["SSIM_RGB"])
+            result[dataset][scale]["SSIM_RGB"] = ssim_rgb
+            all_ssim_rgb.append(ssim_rgb)
+
+            ssim_y = mean(result[dataset][scale]["SSIM_Y"])
+            result[dataset][scale]["SSIM_Y"] = ssim_y
+            all_ssim_y.append(ssim_y)
+
+        result["mean"]["PSNR_RGB"] = mean(all_psnr_rgb)
+        result["mean"]["PSNR_Y"] = mean(all_psnr_y)
+        result["mean"]["SSIM_RGB"] = mean(all_ssim_rgb)
+        result["mean"]["SSIM_Y"] = mean(all_ssim_y)
 
         with open(os.path.join(output_dir, "test-result.json"), "w") as f:
             json.dump(result, f, indent=2)
