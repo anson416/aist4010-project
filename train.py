@@ -38,8 +38,8 @@ def parse_args() -> Namespace:
         default="BASE",
         choices=("MOBILE", "TINY", "SMALL", "BASE", "LARGE", "XLARGE", "HUGE"),
     )
-    parser.add_argument("--block", type=str, default="ConvNeXtBlock")
-    parser.add_argument("--downsampler", type=str, default="conv2d", choices=("conv2d", "maxpool2d"))
+    parser.add_argument("--block", type=str, default="ResNetBlockV2")
+    parser.add_argument("--downsampler", type=str, default="maxpool2d", choices=("conv2d", "maxpool2d"))
     parser.add_argument(
         "--upsampler",
         type=str,
@@ -52,6 +52,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--scale_aware_adaption", action="store_true")
     parser.add_argument("--attention_gate", action="store_true")
     parser.add_argument("--concat_orig_interp", action="store_true")
+    parser.add_argument("--layer_norm", action="store_true")
     parser.add_argument("--stochastic_depth_prob", type=float, default=0.0)
     parser.add_argument("--init_weights", action="store_true")
     parser.add_argument("--reduction", type=int, default=16)
@@ -59,9 +60,9 @@ def parse_args() -> Namespace:
     parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--beta", type=float, default=0.0)
     parser.add_argument("--gamma", type=float, default=0.5)
-    parser.add_argument("--eta", type=float, default=0.01)
-    parser.add_argument("--mu", type=float, default=0.01)
-    parser.add_argument("--aux_weight", type=float, default=0.1)
+    parser.add_argument("--eta", type=float, default=0.1)
+    parser.add_argument("--mu", type=float, default=0.1)
+    parser.add_argument("--aux_weight", type=float, default=0.01)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--max_lr", type=float, default=1e-4)
@@ -229,6 +230,7 @@ configs = {
     "scale_aware_adaption": args.scale_aware_adaption,
     "attention_gate": args.attention_gate,
     "concat_orig_interp": args.concat_orig_interp,
+    "layer_norm": args.layer_norm,
     "stochastic_depth_prob": args.stochastic_depth_prob,
     "init_weights": args.init_weights,
     "reduction": args.reduction,
@@ -314,4 +316,17 @@ output_dir = pipeline.start(args.epochs, train_dataloader, val_dataloader=val_da
 with open(os.path.join(output_dir, "args.json"), "w") as f:
     json.dump(vars(args), f, indent=2)
 
-test(os.path.join(output_dir, "checkpoint_best.pt"), output_dir, test_dir=args.test_dir)
+test(
+    os.path.join(output_dir, "checkpoint_best.pt"),
+    output_dir,
+    "test-result_best.json",
+    test_dir=args.test_dir,
+    save=True,
+)
+test(
+    os.path.join(output_dir, "checkpoint_last.pt"),
+    output_dir,
+    "test-result_last.json",
+    test_dir=args.test_dir,
+    save=True,
+)
