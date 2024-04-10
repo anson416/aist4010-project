@@ -26,6 +26,7 @@ def parse_args() -> Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("model_path", type=str, help="Path to AASR model (.pt).")
     parser.add_argument("output_dir", type=str)
+    parser.add_argument("result_json", type=str)
     parser.add_argument("--test_dir", type=str, default="./data/test")
     parser.add_argument("--scales", nargs="+", type=float, default=(2, 3, 4))
     parser.add_argument("--border", type=int, default=None)
@@ -36,10 +37,11 @@ def parse_args() -> Namespace:
 def test(
     model_path: str,
     output_dir: str,
+    result_json: str,
     test_dir: str = "./data/test",
     scales: list[float] = [2, 3, 4],
     border: Optional[int] = 4,
-    save: bool = True,
+    save: bool = False,
 ) -> None:
     if border is not None and border <= 0:
         raise ValueError("`border` should be either None or an integer greater than 0.")
@@ -110,7 +112,7 @@ def test(
         result["mean"]["SSIM_RGB"] = mean(all_ssim_rgb)
         result["mean"]["SSIM_Y"] = mean(all_ssim_y)
 
-        with open(os.path.join(output_dir, "test-result.json"), "w") as f:
+        with open(os.path.join(output_dir, result_json), "w") as f:
             json.dump(result, f, indent=2)
 
 
@@ -119,6 +121,7 @@ if __name__ == "__main__":
     test(
         args.model_path,
         args.output_dir,
+        args.result_json,
         test_dir=args.test_dir,
         scales=args.scales,
         border=args.border,
