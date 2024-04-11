@@ -16,7 +16,7 @@
 05_ResNetBlockV2_AttentionGate,,,,
 06_ConvNeXtBlock_ChannelAttention_AttentionGate,21.43884973897888,21.666061062087447,0.6115084036517515,0.6235615961883476
 06_ResNetBlockV2_ChannelAttention_AttentionGate,,,,
-07_ConvNeXtBlock_T1,,,,
+07_ConvNeXtBlock_T1,21.470995033754953,21.703886509083304,0.613078362878596,0.6248142374288038
 07_ConvNeXtBlock_T2,,,,
 07_ResNetBlockV2_T1,,,,
 07_ResNetBlockV2_T2,,,,
