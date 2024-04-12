@@ -49,7 +49,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--super_upsampler", type=str, default="scale_aware", choices=("bicubic", "scale_aware"))
     parser.add_argument("--n_recurrent", type=int, default=0)
     parser.add_argument("--channel_attention", action="store_true")
-    parser.add_argument("--scale_aware_adaption", action="store_true")
+    parser.add_argument("--scale_aware_adaptation", action="store_true")
     parser.add_argument("--attention_gate", action="store_true")
     parser.add_argument("--concat_orig_interp", action="store_true")
     parser.add_argument("--layer_norm", action="store_true")
@@ -227,7 +227,7 @@ configs = {
     "super_upsampler": args.super_upsampler,
     "n_recurrent": args.n_recurrent,
     "channel_attention": args.channel_attention,
-    "scale_aware_adaption": args.scale_aware_adaption,
+    "scale_aware_adaptation": args.scale_aware_adaptation,
     "attention_gate": args.attention_gate,
     "concat_orig_interp": args.concat_orig_interp,
     "layer_norm": args.layer_norm,

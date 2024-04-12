@@ -186,7 +186,7 @@ class AASR(nn.Module):
         super_upsampler: Literal["bicubic", "scale_aware"] = "scale_aware",
         n_recurrent: int = 0,
         channel_attention: bool = False,
-        scale_aware_adaption: bool = False,
+        scale_aware_adaptation: bool = False,
         attention_gate: bool = False,
         concat_orig_interp: bool = False,
         layer_norm: bool = False,
@@ -210,7 +210,7 @@ class AASR(nn.Module):
         self.super_upsampler = super_upsampler
         self.n_recurrent = n_recurrent
         self.channel_attention = channel_attention
-        self.scale_aware_adaption = scale_aware_adaption
+        self.scale_aware_adaptation = scale_aware_adaptation
         self.attention_gate = attention_gate
         self.concat_orig_interp = concat_orig_interp
         self.layer_norm = layer_norm
@@ -324,7 +324,7 @@ class AASR(nn.Module):
                         channels,
                         n_recurrent=self.n_recurrent,
                         attention=self.channel_attention,
-                        scale_aware=True if self.scale_aware_adaption and i % 3 == 0 else False,
+                        scale_aware=True if self.scale_aware_adaptation and i % 3 == 0 else False,
                         layer_norm=self.layer_norm,
                         stochastic_depth_prob=self.stochastic_depth_prob * block_id / total_blocks,
                         reduction=self.reduction,

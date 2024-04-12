@@ -78,7 +78,7 @@ class ChannelAttention(nn.Module):
         return x * self.attention(x)
 
 
-class ScaleAwareAdaption(nn.Module):
+class ScaleAwareAdaptation(nn.Module):
     """
     Reference: [Learning A Single Network for Scale-Arbitrary Super-Resolution](https://arxiv.org/abs/2004.03791)
     Source: https://github.com/The-Learning-And-Vision-Atelier-LAVA/ArbSR/blob/master/model/arbrcan.py
@@ -165,7 +165,7 @@ class RecurrentAttentionBlock(nn.Module):
         if attention:
             self.channel_attention = ChannelAttention(channels, reduction=self.reduction)
         if scale_aware:
-            self.scale_aware_adaption = ScaleAwareAdaption(channels, n_experts=self.n_experts)
+            self.scale_aware_adaptation = ScaleAwareAdaptation(channels, n_experts=self.n_experts)
         self.stochastic_depth = StochasticDepth(stochastic_depth_prob, "row")
 
     def forward(
@@ -188,7 +188,7 @@ class RecurrentAttentionBlock(nn.Module):
         out = x + self.stochastic_depth(out)
 
         if self.scale_aware:
-            out = self.scale_aware_adaption(out, scale_h, scale_w)
+            out = self.scale_aware_adaptation(out, scale_h, scale_w)
 
         return out
 
