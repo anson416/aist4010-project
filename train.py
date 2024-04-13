@@ -59,7 +59,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--n_experts", type=int, default=4)
     parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--beta", type=float, default=0.0)
-    parser.add_argument("--gamma", type=float, default=0.5)
+    parser.add_argument("--gamma", type=float, default=0.1)
     parser.add_argument("--eta", type=float, default=0.1)
     parser.add_argument("--mu", type=float, default=0.1)
     parser.add_argument("--aux_weight", type=float, default=0.01)
@@ -177,9 +177,9 @@ class SRLoss(nn.Module):
         self,
         alpha: float = 1.0,
         beta: float = 0.0,
-        gamma: float = 0.5,
-        eta: float = 0.01,
-        mu: float = 0.01,
+        gamma: float = 0.1,
+        eta: float = 0.1,
+        mu: float = 0.1,
     ) -> None:
         assert alpha >= 0.0
         assert beta >= 0.0
