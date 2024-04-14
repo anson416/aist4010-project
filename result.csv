@@ -30,4 +30,11 @@
 09_ResNetBlockV2_L1_MGE,,,,
 09_ResNetBlockV2_L1_SSIM,,,,
 09_ResNetBlockV2_L1_SSIM_MGE_FFT,,,,
-10_ConvNeXtBlock_Aux,,,,
+10_ConvNeXtBlock_Aux,21.44212576998806,21.62927571895061,0.6136653829566799,0.6253967570890248
+10_ResNetBlockV2_Aux,,,,
+11_ConvNeXtBlock_BASE,,,,
+11_ConvNeXtBlock_MOBILE,,,,
+11_ConvNeXtBlock_SMALL,,,,
+11_ResNetBlockV2_BASE,,,,
+11_ResNetBlockV2_MOBILE,,,,
+11_ResNetBlockV2_SMALL,,,,
