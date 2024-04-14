@@ -46,6 +46,7 @@ def test(
     if border is not None and border <= 0:
         raise ValueError("`border` should be either None or an integer greater than 0.")
 
+    os.makedirs(output_dir, exist_ok=True)
     if save:
         upscaled_dir = os.path.join(output_dir, "upscaled_images")
         os.makedirs(upscaled_dir, exist_ok=True)
