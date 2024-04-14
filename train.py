@@ -316,17 +316,5 @@ output_dir = pipeline.start(args.epochs, train_dataloader, val_dataloader=val_da
 with open(os.path.join(output_dir, "args.json"), "w") as f:
     json.dump(vars(args), f, indent=2)
 
-test(
-    os.path.join(output_dir, "checkpoint_best.pt"),
-    output_dir,
-    "test-result_best.json",
-    test_dir=args.test_dir,
-    save=True,
-)
-test(
-    os.path.join(output_dir, "checkpoint_last.pt"),
-    output_dir,
-    "test-result_last.json",
-    test_dir=args.test_dir,
-    save=True,
-)
+test(os.path.join(output_dir, "checkpoint_best.pt"), output_dir, "test-result_best.json", test_dir=args.test_dir)
+test(os.path.join(output_dir, "checkpoint_last.pt"), output_dir, "test-result_last.json", test_dir=args.test_dir)
